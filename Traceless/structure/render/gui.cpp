@@ -41,6 +41,12 @@ std::deque<ToastMsg>           toasts;
 int   active_tab = 0;
 int   prev_active_tab = 0;
 float tab_content_anim = 1.0f;
+int   card_render_index = 0;
+
+constexpr int FPS_HIST_SIZE = 90;
+float fps_history[FPS_HIST_SIZE] = {0};
+int   fps_history_idx = 0;
+float fps_smoothed = 0.0f;
 float nav_pill_y = 0.0f;
 float nav_pill_h = 0.0f;
 bool  nav_pill_init = false;
@@ -311,6 +317,15 @@ struct Card {
           pad_x(18.0f), dt(dtime), clip_pushed(false), hover_amount(0),
           has_master(false), master_on(false), master_alpha(1.0f) {
 
+        // Per-card stagger entry (each card delayed slightly behind the previous)
+        int my_idx = card_render_index++;
+        float delay = my_idx * 0.07f;
+        if (delay > 0.5f) delay = 0.5f;
+        float entry = Clamp01((tab_content_anim - delay) / (1.0f - delay));
+        float entry_eased = EaseOutCubic(entry);
+        pos.y += (1.0f - entry_eased) * 16.0f;
+        pos.x += (1.0f - entry_eased) * (off_x > 0 ? 14.0f : -2.0f);
+
         auto it = section_open.find(sid);
         if (it == section_open.end()) { section_open[sid] = true; open = true; }
         else { open = it->second; }
@@ -330,7 +345,7 @@ struct Card {
         float lift = hv * 1.8f;
         pos.y -= lift;
 
-        float content_fade = Clamp01((tab_content_anim - 0.2f) / 0.5f);
+        float content_fade = entry_eased;
         DrawShadow(dl, pos, w, h, (0.25f + hv * 0.4f) * content_fade);
 
         ImU32 bg_top = LerpColor(C_BG_CARD, C_BG_CARD_HOV, hv);
@@ -893,6 +908,16 @@ void RenderGui() {
     if (dt > 0.1f) dt = 0.1f;
     gui_fade_anim = SmoothLerp(gui_fade_anim, 1.0f, 8.0f, dt);
 
+    // FPS history (one sample per frame, smoothed)
+    float cur_fps = ImGui::GetIO().Framerate;
+    fps_smoothed = fps_smoothed == 0.0f ? cur_fps : SmoothLerp(fps_smoothed, cur_fps, 4.0f, dt);
+    static double last_fps_sample = 0;
+    if (ImGui::GetTime() - last_fps_sample > 0.066) {
+        fps_history[fps_history_idx] = fps_smoothed;
+        fps_history_idx = (fps_history_idx + 1) % FPS_HIST_SIZE;
+        last_fps_sample = ImGui::GetTime();
+    }
+
     ImVec2 base_size(1000, 700);
     ImVec2 scaled_size(base_size.x * menu_scale, base_size.y * menu_scale);
 
@@ -930,14 +955,30 @@ void RenderGui() {
         } else dragging = false;
     }
 
-    // --- Window backdrop with soft accent glow ---
+    // --- Outer drop shadow (window-wide) ---
+    for (int i = 0; i < 6; i++) {
+        float t = i / 5.0f;
+        ImU32 sc = ScaleAlpha(IM_COL32(0, 0, 0, 160), (1.0f - t) * 0.4f * fade);
+        float off = (i + 1) * 3.0f;
+        dl->AddRect(ImVec2(wp.x - off, wp.y - off),
+                    ImVec2(wp.x + ws.x + off, wp.y + ws.y + off),
+                    sc, 14.0f + off * 0.6f, 0, 1.5f);
+    }
+
+    // --- Window backdrop ---
     dl->AddRectFilled(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), C_BG_WIN, 12.0f);
 
-    // top-left accent glow (very subtle)
+    // Subtle accent glow in top-left corner
+    for (int i = 0; i < 10; i++) {
+        float t = i / 9.0f;
+        ImU32 g = ScaleAlpha(C_ACCENT, 0.025f * (1.0f - t));
+        dl->AddCircleFilled(ImVec2(wp.x + 60, wp.y + 60), 200 + i * 35, g);
+    }
+    // Subtle accent glow in bottom-right corner (mirror)
     for (int i = 0; i < 8; i++) {
         float t = i / 7.0f;
-        ImU32 g = ScaleAlpha(C_ACCENT, 0.025f * (1.0f - t));
-        dl->AddCircleFilled(ImVec2(wp.x + 60, wp.y + 60), 180 + i * 30, g);
+        ImU32 g = ScaleAlpha(C_ACCENT, 0.018f * (1.0f - t));
+        dl->AddCircleFilled(ImVec2(wp.x + ws.x - 80, wp.y + ws.y - 80), 180 + i * 30, g);
     }
 
     // --- TOP BAR ---
@@ -972,6 +1013,17 @@ void RenderGui() {
 
     // Build info + window controls (right)
     {
+        // PREMIUM badge
+        const char* prem_text = "PREMIUM";
+        ImVec2 pts = ImGui::CalcTextSize(prem_text);
+        float pp_w = pts.x + 22, pp_h = 22;
+        ImVec2 pp_pos(wp.x + ws.x - 80 - pp_w - 14, wp.y + 19);
+        float prem_pulse = (sinf((float)ImGui::GetTime() * 1.4f) * 0.5f + 0.5f);
+        ImU32 pp_bg = LerpColor(IM_COL32(60, 22, 25, 200), IM_COL32(90, 28, 32, 220), prem_pulse);
+        DrawPill(dl, pp_pos, pp_w, pp_h, pp_bg, ScaleAlpha(C_ACCENT, 0.6f + prem_pulse * 0.3f));
+        dl->AddCircleFilled(ImVec2(pp_pos.x + 10, pp_pos.y + pp_h * 0.5f), 2.5f, C_ACCENT);
+        dl->AddText(ImVec2(pp_pos.x + 18, pp_pos.y + (pp_h - pts.y) * 0.5f), C_ACCENT_LIGHT, prem_text);
+
         const char* build_str = "build 1.2.0  nov 29 2025";
         ImVec2 bs = ImGui::CalcTextSize(build_str);
         dl->AddText(ImVec2(wp.x + ws.x - bs.x - 80, wp.y + 23), C_TEXT_HINT, build_str);
@@ -1101,6 +1153,24 @@ void RenderGui() {
     content_y += 60;
     content_h -= 60;
 
+    // Subtle dot grid pattern behind cards
+    {
+        float dot_alpha = 0.04f * content_alpha;
+        ImU32 dc = ScaleAlpha(C_WHITE, dot_alpha);
+        float step = 22.0f;
+        dl->PushClipRect(ImVec2(content_x + pad - 4, content_y - 4),
+                         ImVec2(content_x + content_w - pad + 4, content_y + content_h - 4), true);
+        for (float dy = content_y + 8; dy < content_y + content_h - 8; dy += step) {
+            for (float dx = content_x + pad + 8; dx < content_x + content_w - pad - 8; dx += step) {
+                dl->AddCircleFilled(ImVec2(dx, dy), 1.0f, dc);
+            }
+        }
+        dl->PopClipRect();
+    }
+
+    // Reset stagger counter per tab
+    card_render_index = 0;
+
     // Apply tab transition alpha
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, content_alpha);
 
@@ -1150,18 +1220,69 @@ void RenderGui() {
         { Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y + top + v_gap), cw, bot, "info_aim", dt, off_x);
           c.Header("performance", nullptr, "live stats");
           char buf[64];
-          sprintf_s(buf, "%.1f", ImGui::GetIO().Framerate);
-          c.Space(4);
-          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "framerate");
-          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 40, c.pos.y + c.y), C_TEXT_BRIGHT, buf);
+          c.Space(2);
+          // Big FPS number
+          sprintf_s(buf, "%.0f", fps_smoothed);
+          ImVec2 big_sz = ImGui::CalcTextSize(buf);
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_WHITE, buf);
+          dl->AddText(ImVec2(c.pos.x + c.pad_x + big_sz.x + 4, c.pos.y + c.y + 3), C_TEXT_HINT, "fps");
+          sprintf_s(buf, "%.1f ms / frame", 1000.0f / (fps_smoothed > 0 ? fps_smoothed : 60.0f));
+          ImVec2 mt = ImGui::CalcTextSize(buf);
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - mt.x, c.pos.y + c.y + 4), C_TEXT_DIM, buf);
           c.y += 22;
-          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "frame time");
-          sprintf_s(buf, "%.1f ms", 1000.0f / ImGui::GetIO().Framerate);
-          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 50, c.pos.y + c.y), C_TEXT_BRIGHT, buf);
-          c.y += 22;
+
+          // FPS sparkline
+          float gx0 = c.pos.x + c.pad_x;
+          float gx1 = c.pos.x + c.w - c.pad_x;
+          float gy0 = c.pos.y + c.y;
+          float gy1 = c.pos.y + c.y + 90;
+          dl->AddRectFilled(ImVec2(gx0, gy0), ImVec2(gx1, gy1), ScaleAlpha(C_BG_INPUT, 0.6f), 6.0f);
+          dl->AddRect(ImVec2(gx0, gy0), ImVec2(gx1, gy1), ScaleAlpha(C_BORDER_SOFT, 0.8f), 6.0f, 0, 1.0f);
+          float fmax = 1.0f, fmin = 1e9f;
+          for (int i = 0; i < FPS_HIST_SIZE; i++) {
+              float v = fps_history[i];
+              if (v <= 0.0f) continue;
+              if (v > fmax) fmax = v;
+              if (v < fmin) fmin = v;
+          }
+          if (fmin > fmax) fmin = 0;
+          if (fmax < 60) fmax = 60;
+          float rng = fmax - fmin;
+          if (rng < 30) { float mid = (fmax + fmin) * 0.5f; fmax = mid + 15; fmin = mid - 15; rng = 30; }
+          // grid lines
+          for (int i = 1; i < 3; i++) {
+              float gy = gy0 + (gy1 - gy0) * i / 3.0f;
+              dl->AddLine(ImVec2(gx0 + 4, gy), ImVec2(gx1 - 4, gy), ScaleAlpha(C_BORDER_SOFT, 0.5f), 1.0f);
+          }
+          // line graph
+          ImVec2 prev(0, 0);
+          bool first = true;
+          for (int i = 0; i < FPS_HIST_SIZE; i++) {
+              int idx = (fps_history_idx + i) % FPS_HIST_SIZE;
+              float v = fps_history[idx];
+              if (v <= 0) continue;
+              float nx = gx0 + 6 + (gx1 - gx0 - 12) * (i / (float)(FPS_HIST_SIZE - 1));
+              float ny = gy1 - 6 - (gy1 - gy0 - 12) * Clamp01((v - fmin) / rng);
+              if (!first) {
+                  dl->AddLine(prev, ImVec2(nx, ny), C_ACCENT, 1.6f);
+                  // fill under line
+                  dl->AddTriangleFilled(prev, ImVec2(nx, ny), ImVec2(nx, gy1 - 1), ScaleAlpha(C_ACCENT, 0.06f));
+                  dl->AddTriangleFilled(prev, ImVec2(prev.x, gy1 - 1), ImVec2(nx, gy1 - 1), ScaleAlpha(C_ACCENT, 0.06f));
+              }
+              prev = ImVec2(nx, ny);
+              first = false;
+          }
+          // current value dot
+          if (!first) {
+              dl->AddCircleFilled(prev, 3.0f, C_WHITE);
+              dl->AddCircleFilled(prev, 5.5f, ScaleAlpha(C_ACCENT, 0.3f));
+          }
+          c.y += 100;
+
+          // status row
           dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "status");
-          DrawStatusDot(dl, ImVec2(c.pos.x + c.w - c.pad_x - 50, c.pos.y + c.y + 6), C_SUCCESS, (float)ImGui::GetTime());
-          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 38, c.pos.y + c.y), C_SUCCESS, "online");
+          DrawStatusDot(dl, ImVec2(c.pos.x + c.w - c.pad_x - 56, c.pos.y + c.y + 6), C_SUCCESS, (float)ImGui::GetTime());
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 44, c.pos.y + c.y), C_SUCCESS, "online");
         }
     }
     else if (active_tab == 1) {
