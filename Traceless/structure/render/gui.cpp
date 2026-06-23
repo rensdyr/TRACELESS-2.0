@@ -19,6 +19,8 @@ static std::map<std::string, float>   sld_hover_anim;
 static std::map<std::string, float>   hdr_hover_anim;
 static std::map<std::string, float>   kb_press_anim;
 static std::map<std::string, float>   cmb_hover_anim;
+static std::map<std::string, double> chk_last_change_time;
+static std::map<std::string, double> sld_last_change_time;
 
 static int   active_tab = 0;
 static int   prev_active_tab = 0;
@@ -269,14 +271,31 @@ struct Card {
         if (anim_progress < 0.01f) { y += CHK_STEP; return false; }
         std::string key = std::string(id) + "_chk_" + label;
         float& ca = AnimState(chk_anim, key, *v ? 1.0f : 0.0f);
+
+        bool prev_ca = ca > 0.5f;
         ca = SmoothLerp(ca, *v ? 1.0f : 0.0f, 24.0f, dt);
+        bool now_ca = ca > 0.5f;
+
+        if (prev_ca != now_ca) {
+            chk_last_change_time[key] = ImGui::GetTime();
+        }
+
+        double time_since_change = ImGui::GetTime() - (chk_last_change_time.find(key) != chk_last_change_time.end() ? chk_last_change_time[key] : -10.0);
+        float change_highlight = Clamp01(1.0f - (float)(time_since_change / 0.4f));
 
         float sz = 12.0f;
         ImVec2 cp(pos.x + pad_x, pos.y + y + 3);
         ImU32 brd = LerpColor(C_BORDER, C_ACCENT, ca);
         dl->AddRect(cp, ImVec2(cp.x + sz, cp.y + sz), brd, 3.0f, 0, 1.0f);
+
+        if (change_highlight > 0.1f) {
+            dl->AddRect(ImVec2(cp.x - 2, cp.y - 2), ImVec2(cp.x + sz + 2, cp.y + sz + 2),
+                        ScaleAlpha(C_ACCENT, change_highlight * 0.4f), 3.0f, 0, 1.0f);
+        }
+
         DrawAnimatedCheckmark(dl, cp, sz, ca);
-        dl->AddText(ImVec2(cp.x + sz + 7, cp.y - 2), C_TEXT, label);
+        ImU32 lbl_col = LerpColor(C_TEXT, C_ACCENT_LIGHT, change_highlight * 0.3f);
+        dl->AddText(ImVec2(cp.x + sz + 7, cp.y - 2), lbl_col, label);
 
         if (anim_progress > 0.65f) {
             ImGui::SetCursorScreenPos(ImVec2(pos.x + pad_x - 4, pos.y + y));
@@ -414,13 +433,19 @@ struct Card {
         std::string sld_key = std::string(id) + "_sld_val_" + label;
         int& last_v = (sld_last_val.find(sld_key) == sld_last_val.end()) ? (sld_last_val[sld_key] = *v) : sld_last_val[sld_key];
         bool val_changed = (*v != last_v);
-        if (val_changed) last_v = *v;
+        if (val_changed) {
+            last_v = *v;
+            sld_last_change_time[sld_key] = ImGui::GetTime();
+        }
 
-        ImU32 val_col = val_changed ? C_ACCENT_LIGHT : C_TEXT_DIM;
+        double time_since_change = ImGui::GetTime() - (sld_last_change_time.find(sld_key) != sld_last_change_time.end() ? sld_last_change_time[sld_key] : -10.0);
+        float change_highlight = Clamp01(1.0f - (float)(time_since_change / 0.5f));
+
         dl->AddText(ImVec2(pos.x + pad_x, pos.y + y), C_TEXT, label);
         char val[32];
         sprintf_s(val, "%d%s", *v, suffix);
         ImVec2 vs = ImGui::CalcTextSize(val);
+        ImU32 val_col = LerpColor(C_TEXT_DIM, C_ACCENT_LIGHT, change_highlight * 0.6f);
         dl->AddText(ImVec2(pos.x + w - vs.x - pad_x, pos.y + y), val_col, val);
 
         y += 16;
