@@ -235,7 +235,9 @@ struct Card {
     ~Card() { if (clip_pushed) dl->PopClipRect(); }
 
     void Header(const char* label) {
-        dl->AddText(ImVec2(pos.x + pad_x, pos.y + 13), C_TEXT_BRIGHT, label);
+        float& hv = AnimState(hdr_hover_anim, std::string("ch_") + id, 0.0f);
+        ImU32 txt_col = LerpColor(C_TEXT_BRIGHT, C_ACCENT_LIGHT, hv * 0.2f);
+        dl->AddText(ImVec2(pos.x + pad_x, pos.y + 13), txt_col, label);
 
         ImVec2 cv(pos.x + w - pad_x - 1, pos.y + 19);
         float rot = (anim_progress - 1.0f) * 1.5708f;
@@ -243,7 +245,16 @@ struct Card {
         auto rp = [&](float dx, float dy) {
             return ImVec2(cv.x + dx * cr - dy * sr, cv.y + dx * sr + dy * cr);
         };
-        dl->AddTriangleFilled(rp(-4, -2), rp(4, -2), rp(0, 3), C_TEXT_DIM);
+
+        ImU32 chev_col = LerpColor(C_TEXT_DIM, C_ACCENT, anim_progress * 0.3f);
+        dl->AddTriangleFilled(rp(-4, -2), rp(4, -2), rp(0, 3), chev_col);
+
+        if (anim_progress > 0.4f) {
+            float line_alpha = (anim_progress - 0.4f) / 0.6f;
+            dl->AddLine(ImVec2(pos.x + pad_x, pos.y + HEADER_H - 1),
+                        ImVec2(pos.x + w - pad_x, pos.y + HEADER_H - 1),
+                        ScaleAlpha(C_ACCENT, line_alpha * 0.3f), 0.5f);
+        }
 
         ImGui::SetCursorScreenPos(pos);
         ImGui::InvisibleButton((std::string("##hdr_") + id).c_str(), ImVec2(w, HEADER_H));
@@ -296,7 +307,15 @@ struct Card {
         ImVec2 tp(pos.x + w - pad_x - tw, pos.y + y + 2);
         ImU32 fill = LerpColor(C_BG_INPUT, tog_color ? tog_color : C_ACCENT, ta);
         dl->AddRectFilled(tp, ImVec2(tp.x + tw, tp.y + th), fill, th * 0.5f);
-        dl->AddRect(tp, ImVec2(tp.x + tw, tp.y + th), C_BORDER, th * 0.5f, 0, 1.0f);
+
+        ImU32 border_col = LerpColor(C_BORDER, tog_color ? tog_color : C_ACCENT, ta * 0.5f);
+        dl->AddRect(tp, ImVec2(tp.x + tw, tp.y + th), border_col, th * 0.5f, 0, 1.0f);
+
+        if (ta > 0.3f) {
+            ImU32 glow = ScaleAlpha(tog_color ? tog_color : C_ACCENT, (ta - 0.3f) * 0.25f);
+            dl->AddRect(ImVec2(tp.x - 2, tp.y - 2), ImVec2(tp.x + tw + 2, tp.y + th + 2), glow, th * 0.5f + 2, 0, 1.0f);
+        }
+
         float kr = (th - 4) * 0.5f;
         float kx = tp.x + 2 + kr + (tw - 4 - kr * 2) * ta;
         dl->AddCircleFilled(ImVec2(kx, tp.y + th * 0.5f), kr, C_WHITE);
@@ -369,12 +388,17 @@ struct Card {
 
         ImU32 bg = LerpColor(C_BG_INPUT, ScaleAlpha(C_ACCENT, 0.2f), hv * 0.3f);
         dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + bh), bg, 3.0f);
-        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), LerpColor(C_BORDER, C_ACCENT, hv * 0.2f), 3.0f, 0, 1.0f);
-        if (*v >= 0 && *v < (int)items.size())
-            dl->AddText(ImVec2(bp.x + 10, bp.y + 6), C_TEXT, items[*v].c_str());
+        ImU32 br = LerpColor(C_BORDER, LerpColor(C_BORDER, C_ACCENT, 0.4f), hv);
+        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), br, 3.0f, 0, 1.0f);
+
+        if (*v >= 0 && *v < (int)items.size()) {
+            ImU32 txt_col = LerpColor(C_TEXT, C_ACCENT_LIGHT, hv * 0.3f);
+            dl->AddText(ImVec2(bp.x + 10, bp.y + 6), txt_col, items[*v].c_str());
+        }
 
         ImVec2 av(bp.x + bw - 10, bp.y + bh / 2 - 1);
-        dl->AddTriangleFilled(ImVec2(av.x - 3, av.y - 2), ImVec2(av.x + 3, av.y - 2), ImVec2(av.x, av.y + 2.5f), C_TEXT_DIM);
+        ImU32 arr_col = LerpColor(C_TEXT_DIM, C_ACCENT, hv * 0.5f);
+        dl->AddTriangleFilled(ImVec2(av.x - 3, av.y - 2), ImVec2(av.x + 3, av.y - 2), ImVec2(av.x, av.y + 2.5f), arr_col);
 
         if (anim_progress > 0.65f) {
             ImGui::SetCursorScreenPos(bp);
