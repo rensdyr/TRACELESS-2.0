@@ -7,9 +7,20 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <deque>
 
 namespace FrameWork {
 namespace {
+
+// ========================= STATE =========================
+
+struct ToastMsg {
+    std::string text;
+    double      created;
+    float       life;
+    ImU32       col;
+    float       anim;
+};
 
 std::map<std::string, bool>    section_open;
 std::map<std::string, float>   section_anim;
@@ -20,18 +31,20 @@ std::map<std::string, float>   hdr_hover_anim;
 std::map<std::string, float>   kb_press_anim;
 std::map<std::string, float>   cmb_hover_anim;
 std::map<std::string, float>   btn_hover_anim;
+std::map<std::string, float>   nav_hover_anim;
 std::map<std::string, bool>    chk_prev_val;
 std::map<std::string, double>  chk_last_change_time;
 std::map<std::string, int>     sld_last_val;
 std::map<std::string, double>  sld_last_change_time;
+std::deque<ToastMsg>           toasts;
 
 int   active_tab = 0;
 int   prev_active_tab = 0;
 float tab_content_anim = 1.0f;
-float tab_anim[6] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-float tab_indicator_x = 0.0f;
-float tab_indicator_width = 0.0f;
-bool  tab_indicator_init = false;
+float nav_pill_y = 0.0f;
+float nav_pill_h = 0.0f;
+bool  nav_pill_init = false;
+float nav_pill_alpha = 0.0f;
 float gui_fade_anim = 0.0f;
 
 bool  key_listening = false;
@@ -45,19 +58,34 @@ bool  pause_game = false;
 bool  dragging = false;
 ImVec2 drag_offset(0, 0);
 
-const ImU32 C_ACCENT       = IM_COL32(205, 60, 60, 255);
-const ImU32 C_ACCENT_DIM   = IM_COL32(170, 45, 45, 255);
-const ImU32 C_ACCENT_LIGHT = IM_COL32(230, 100, 100, 180);
-const ImU32 C_BG_CARD      = IM_COL32(30, 30, 35, 190);
-const ImU32 C_BG_CARD_HOV  = IM_COL32(38, 38, 44, 200);
-const ImU32 C_BG_WIN       = IM_COL32(12, 12, 15, 175);
-const ImU32 C_BG_INPUT     = IM_COL32(16, 16, 20, 215);
-const ImU32 C_BORDER       = IM_COL32(60, 60, 68, 70);
-const ImU32 C_BORDER_SOFT  = IM_COL32(50, 50, 58, 55);
-const ImU32 C_TEXT         = IM_COL32(185, 185, 192, 235);
-const ImU32 C_TEXT_DIM     = IM_COL32(115, 115, 125, 235);
-const ImU32 C_TEXT_BRIGHT  = IM_COL32(215, 215, 222, 245);
-const ImU32 C_WHITE        = IM_COL32(235, 235, 240, 255);
+// ========================= PALETTE =========================
+
+const ImU32 C_BG_WIN       = IM_COL32(10, 11, 14, 245);
+const ImU32 C_BG_SIDEBAR   = IM_COL32(14, 15, 19, 252);
+const ImU32 C_BG_TOPBAR    = IM_COL32(13, 14, 18, 252);
+const ImU32 C_BG_CONTENT   = IM_COL32(16, 17, 22, 240);
+const ImU32 C_BG_CARD      = IM_COL32(22, 24, 30, 240);
+const ImU32 C_BG_CARD_HOV  = IM_COL32(28, 30, 37, 248);
+const ImU32 C_BG_CARD_BOT  = IM_COL32(18, 19, 24, 240);
+const ImU32 C_BG_INPUT     = IM_COL32(15, 16, 21, 230);
+const ImU32 C_BG_INPUT_HOV = IM_COL32(20, 22, 28, 240);
+const ImU32 C_BG_PILL      = IM_COL32(32, 34, 41, 200);
+const ImU32 C_BORDER       = IM_COL32(48, 51, 60, 100);
+const ImU32 C_BORDER_SOFT  = IM_COL32(38, 40, 48, 60);
+const ImU32 C_BORDER_BR    = IM_COL32(72, 76, 88, 130);
+const ImU32 C_TEXT         = IM_COL32(210, 213, 220, 240);
+const ImU32 C_TEXT_DIM     = IM_COL32(130, 134, 144, 220);
+const ImU32 C_TEXT_HINT    = IM_COL32(92, 96, 107, 200);
+const ImU32 C_TEXT_BRIGHT  = IM_COL32(238, 240, 245, 252);
+const ImU32 C_WHITE        = IM_COL32(245, 246, 250, 255);
+const ImU32 C_ACCENT       = IM_COL32(225, 70, 75, 255);
+const ImU32 C_ACCENT_DIM   = IM_COL32(180, 50, 55, 220);
+const ImU32 C_ACCENT_LIGHT = IM_COL32(240, 105, 110, 220);
+const ImU32 C_ACCENT_GLOW  = IM_COL32(225, 70, 75, 90);
+const ImU32 C_SUCCESS      = IM_COL32(85, 200, 140, 255);
+const ImU32 C_WARNING      = IM_COL32(245, 185, 95, 255);
+
+// ========================= MATH =========================
 
 float Clamp01(float t) { return t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t); }
 
@@ -67,10 +95,19 @@ float SmoothLerp(float cur, float tgt, float speed, float dt) {
     return cur + (tgt - cur) * Clamp01(t);
 }
 
-float EaseOutCubic(float t) {
+float EaseOutCubic(float t) { t = Clamp01(t); float f = t - 1.0f; return f * f * f + 1.0f; }
+float EaseOutQuart(float t) { t = Clamp01(t); float f = t - 1.0f; return 1.0f - f * f * f * f; }
+float EaseInOutCubic(float t) {
     t = Clamp01(t);
+    if (t < 0.5f) return 4 * t * t * t;
+    float f = -2 * t + 2;
+    return 1.0f - (f * f * f) * 0.5f;
+}
+float EaseOutBack(float t) {
+    t = Clamp01(t);
+    const float c1 = 1.70158f, c3 = c1 + 1.0f;
     float f = t - 1.0f;
-    return f * f * f + 1.0f;
+    return 1.0f + c3 * f * f * f + c1 * f * f;
 }
 
 ImU32 LerpColor(ImU32 a, ImU32 b, float t) {
@@ -91,9 +128,21 @@ ImU32 ScaleAlpha(ImU32 c, float s) {
 
 float& AnimState(std::map<std::string, float>& m, const std::string& k, float def) {
     auto it = m.find(k);
-    if (it == m.end())
-        it = m.emplace(k, def).first;
+    if (it == m.end()) it = m.emplace(k, def).first;
     return it->second;
+}
+
+void ShowToast(const std::string& msg, ImU32 col = C_ACCENT, float life = 2.4f) {
+    if (!toasts.empty() && toasts.back().text == msg &&
+        ImGui::GetTime() - toasts.back().created < 0.3) return;
+    ToastMsg t;
+    t.text = msg;
+    t.created = ImGui::GetTime();
+    t.life = life;
+    t.col = col;
+    t.anim = 0.0f;
+    toasts.push_back(t);
+    if (toasts.size() > 4) toasts.pop_front();
 }
 
 std::string KeyCodeToString(int key) {
@@ -111,7 +160,58 @@ std::string KeyCodeToString(int key) {
     }
 }
 
-// --- Icon drawing ---
+// ========================= ICONS =========================
+
+void DrawCrosshairIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddCircle(c, 7, col, 22, 1.4f);
+    dl->AddCircleFilled(c, 1.4f, col);
+    dl->AddLine(ImVec2(c.x - 10, c.y), ImVec2(c.x - 3, c.y), col, 1.4f);
+    dl->AddLine(ImVec2(c.x + 3, c.y), ImVec2(c.x + 10, c.y), col, 1.4f);
+    dl->AddLine(ImVec2(c.x, c.y - 10), ImVec2(c.x, c.y - 3), col, 1.4f);
+    dl->AddLine(ImVec2(c.x, c.y + 3), ImVec2(c.x, c.y + 10), col, 1.4f);
+}
+
+void DrawEyeIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddBezierCubic(ImVec2(c.x - 10, c.y), ImVec2(c.x - 5, c.y - 6), ImVec2(c.x + 5, c.y - 6), ImVec2(c.x + 10, c.y), col, 1.4f);
+    dl->AddBezierCubic(ImVec2(c.x - 10, c.y), ImVec2(c.x - 5, c.y + 6), ImVec2(c.x + 5, c.y + 6), ImVec2(c.x + 10, c.y), col, 1.4f);
+    dl->AddCircleFilled(c, 2.5f, col);
+}
+
+void DrawOverlayIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddRect(ImVec2(c.x - 8, c.y - 8), ImVec2(c.x + 8, c.y + 8), col, 2.0f, 0, 1.3f);
+    dl->AddRect(ImVec2(c.x - 5, c.y - 5), ImVec2(c.x + 5, c.y + 5), ScaleAlpha(col, 0.6f), 1.5f, 0, 1.2f);
+    dl->AddRectFilled(ImVec2(c.x - 1.5f, c.y - 1.5f), ImVec2(c.x + 1.5f, c.y + 1.5f), col, 0.5f);
+}
+
+void DrawBoltIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    ImVec2 pts[6] = {
+        ImVec2(c.x - 1, c.y - 9),
+        ImVec2(c.x - 7, c.y + 2),
+        ImVec2(c.x - 1, c.y + 2),
+        ImVec2(c.x + 1, c.y + 9),
+        ImVec2(c.x + 7, c.y - 2),
+        ImVec2(c.x + 1, c.y - 2),
+    };
+    dl->AddConvexPolyFilled(pts, 6, col);
+}
+
+void DrawListIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    for (int i = 0; i < 3; i++) {
+        float y = c.y - 6 + i * 6;
+        dl->AddCircleFilled(ImVec2(c.x - 7, y), 1.4f, col);
+        dl->AddLine(ImVec2(c.x - 3, y), ImVec2(c.x + 8, y), col, 1.4f);
+    }
+}
+
+void DrawSettingsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddCircle(c, 7.5f, col, 24, 1.4f);
+    dl->AddCircle(c, 2.8f, col, 14, 1.3f);
+    for (int i = 0; i < 8; i++) {
+        float a = i * 6.2831f / 8 + 0.39f;
+        dl->AddLine(ImVec2(c.x + cosf(a) * 7.5f, c.y + sinf(a) * 7.5f),
+                    ImVec2(c.x + cosf(a) * 10.0f, c.y + sinf(a) * 10.0f), col, 1.4f);
+    }
+}
 
 void DrawKeyboardIcon(ImDrawList* dl, ImVec2 p, ImU32 col) {
     dl->AddRect(p, ImVec2(p.x + 15, p.y + 10), col, 2.0f, 0, 1.0f);
@@ -122,56 +222,27 @@ void DrawKeyboardIcon(ImDrawList* dl, ImVec2 p, ImU32 col) {
         }
 }
 
-void DrawCrosshairIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
-    dl->AddCircle(c, 7, col, 22, 1.3f);
-    dl->AddLine(ImVec2(c.x - 10, c.y), ImVec2(c.x - 3, c.y), col, 1.3f);
-    dl->AddLine(ImVec2(c.x + 3, c.y), ImVec2(c.x + 10, c.y), col, 1.3f);
-    dl->AddLine(ImVec2(c.x, c.y - 10), ImVec2(c.x, c.y - 3), col, 1.3f);
-    dl->AddLine(ImVec2(c.x, c.y + 3), ImVec2(c.x, c.y + 10), col, 1.3f);
+void DrawCloseIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddLine(ImVec2(c.x - 4, c.y - 4), ImVec2(c.x + 4, c.y + 4), col, 1.4f);
+    dl->AddLine(ImVec2(c.x + 4, c.y - 4), ImVec2(c.x - 4, c.y + 4), col, 1.4f);
 }
 
-void DrawEyeIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
-    dl->AddBezierCubic(ImVec2(c.x - 10, c.y), ImVec2(c.x - 5, c.y - 6), ImVec2(c.x + 5, c.y - 6), ImVec2(c.x + 10, c.y), col, 1.3f);
-    dl->AddBezierCubic(ImVec2(c.x - 10, c.y), ImVec2(c.x - 5, c.y + 6), ImVec2(c.x + 5, c.y + 6), ImVec2(c.x + 10, c.y), col, 1.3f);
-    dl->AddCircle(c, 3, col, 14, 1.2f);
+void DrawMinimizeIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddLine(ImVec2(c.x - 5, c.y + 3), ImVec2(c.x + 5, c.y + 3), col, 1.4f);
 }
 
-void DrawGlobeIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
-    dl->AddCircle(c, 9, col, 28, 1.3f);
-    dl->AddLine(ImVec2(c.x - 9, c.y), ImVec2(c.x + 9, c.y), col, 1.1f);
-    dl->AddBezierCubic(ImVec2(c.x, c.y - 9), ImVec2(c.x - 5, c.y - 3), ImVec2(c.x - 5, c.y + 3), ImVec2(c.x, c.y + 9), col, 1.1f);
-    dl->AddBezierCubic(ImVec2(c.x, c.y - 9), ImVec2(c.x + 5, c.y - 3), ImVec2(c.x + 5, c.y + 3), ImVec2(c.x, c.y + 9), col, 1.1f);
-}
+// ========================= EFFECTS =========================
 
-void DrawExploitsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
-    dl->AddLine(ImVec2(c.x - 9, c.y - 4), ImVec2(c.x + 7, c.y - 4), col, 1.3f);
-    dl->AddLine(ImVec2(c.x + 7, c.y - 4), ImVec2(c.x + 4, c.y - 7), col, 1.3f);
-    dl->AddLine(ImVec2(c.x + 7, c.y - 4), ImVec2(c.x + 4, c.y - 1), col, 1.3f);
-    dl->AddLine(ImVec2(c.x + 9, c.y + 4), ImVec2(c.x - 7, c.y + 4), col, 1.3f);
-    dl->AddLine(ImVec2(c.x - 7, c.y + 4), ImVec2(c.x - 4, c.y + 1), col, 1.3f);
-    dl->AddLine(ImVec2(c.x - 7, c.y + 4), ImVec2(c.x - 4, c.y + 7), col, 1.3f);
-}
-
-void DrawListsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) { DrawKeyboardIcon(dl, ImVec2(c.x - 7, c.y - 5), col); }
-
-void DrawSettingsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
-    dl->AddCircle(c, 8, col, 24, 1.3f);
-    dl->AddCircle(c, 3, col, 14, 1.2f);
-    for (int i = 0; i < 8; i++) {
-        float a = i * 6.2831f / 8;
-        dl->AddLine(ImVec2(c.x + cosf(a) * 8, c.y + sinf(a) * 8),
-                    ImVec2(c.x + cosf(a) * 10.5f, c.y + sinf(a) * 10.5f), col, 1.3f);
-    }
-}
-
-// --- Card effects ---
-
-void DrawCardShadow(ImDrawList* dl, ImVec2 pos, float w, float h, float intensity) {
+void DrawShadow(ImDrawList* dl, ImVec2 pos, float w, float h, float intensity) {
     if (intensity < 0.01f) return;
-    ImU32 s1 = ScaleAlpha(IM_COL32(0, 0, 0, 100), intensity * 0.5f);
-    dl->AddRectFilled(ImVec2(pos.x + 2, pos.y + h - 1), ImVec2(pos.x + w - 2, pos.y + h + 3), s1, 4.0f);
-    ImU32 s2 = ScaleAlpha(IM_COL32(0, 0, 0, 50), intensity * 0.25f);
-    dl->AddRectFilled(ImVec2(pos.x + 1, pos.y + h + 3), ImVec2(pos.x + w - 1, pos.y + h + 5), s2, 2.0f);
+    for (int i = 0; i < 5; i++) {
+        float t = (float)i / 5.0f;
+        ImU32 c = ScaleAlpha(IM_COL32(0, 0, 0, 80), intensity * (1.0f - t) * 0.5f);
+        float off = (i + 1) * 1.6f;
+        dl->AddRect(ImVec2(pos.x - off, pos.y - off + 1),
+                    ImVec2(pos.x + w + off, pos.y + h + off + 1),
+                    c, 12.0f + off * 0.5f, 0, 1.0f);
+    }
 }
 
 void DrawAnimatedCheckmark(ImDrawList* dl, ImVec2 cp, float sz, float ca) {
@@ -187,21 +258,33 @@ void DrawAnimatedCheckmark(ImDrawList* dl, ImVec2 cp, float sz, float ca) {
     float s1 = prog < 0.4f ? prog / 0.4f : 1.0f;
     float s2 = prog < 0.4f ? 0.0f : (prog - 0.4f) / 0.6f;
     ImVec2 e1(a0.x + (a1.x - a0.x) * s1, a0.y + (a1.y - a0.y) * s1);
-    dl->AddLine(a0, e1, mk, 1.4f);
+    dl->AddLine(a0, e1, mk, 1.6f);
     if (s2 > 0) {
         ImVec2 e2(a1.x + (a2.x - a1.x) * s2, a1.y + (a2.y - a1.y) * s2);
-        dl->AddLine(a1, e2, mk, 1.4f);
+        dl->AddLine(a1, e2, mk, 1.6f);
     }
+}
+
+void DrawStatusDot(ImDrawList* dl, ImVec2 pos, ImU32 col, float pulse) {
+    float phase = fmodf(pulse, 1.0f);
+    float p = (sinf(phase * 6.2831f) * 0.5f + 0.5f);
+    dl->AddCircleFilled(pos, 6.0f + p * 1.2f, ScaleAlpha(col, 0.15f + p * 0.15f));
+    dl->AddCircleFilled(pos, 3.5f, col);
+    dl->AddCircleFilled(pos, 1.5f, C_WHITE);
 }
 
 void DrawPulsingDot(ImDrawList* dl, ImVec2 pos, float pulse, ImU32 col) {
     float phase = fmodf(pulse, 1.0f);
     float s = sinf(phase * 6.2831f);
-    float r = 3.0f + s * 1.5f;
-    dl->AddCircleFilled(pos, r, ScaleAlpha(col, 0.7f + s * 0.3f));
+    dl->AddCircleFilled(pos, 3.0f + s * 1.4f, ScaleAlpha(col, 0.7f + s * 0.3f));
 }
 
-// --- Card widget ---
+void DrawPill(ImDrawList* dl, ImVec2 pos, float w, float h, ImU32 bg, ImU32 border = 0) {
+    dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), bg, h * 0.5f);
+    if (border) dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), border, h * 0.5f, 0, 1.0f);
+}
+
+// ========================= CARD =========================
 
 struct Card {
     ImDrawList* dl;
@@ -209,51 +292,60 @@ struct Card {
     float w, h, h_target, y, dt;
     const char* id;
     bool open;
-    float pad_x, anim_progress;
+    float pad_x, anim_progress, hover_amount;
     bool clip_pushed;
+    bool has_master;
+    bool master_on;
+    float master_alpha;
 
-    static constexpr float HEADER_H = 42.0f;
+    static constexpr float HEADER_H = 46.0f;
     static constexpr float CHK_STEP = 28.0f;
     static constexpr float KB_STEP  = 30.0f;
     static constexpr float CMB_STEP = 50.0f;
     static constexpr float SLD_STEP = 40.0f;
-    static constexpr float BTN_H    = 28.0f;
+    static constexpr float BTN_H    = 30.0f;
+    static constexpr float SEC_STEP = 22.0f;
 
-    Card(ImDrawList* d, ImVec2 p, float width, float full_h, const char* sid, float deltaTime, float off_x = 0.0f)
+    Card(ImDrawList* d, ImVec2 p, float width, float full_h, const char* sid, float dtime, float off_x = 0.0f)
         : dl(d), pos(ImVec2(p.x + off_x, p.y)), w(width), h_target(full_h), y(0), id(sid),
-          pad_x(16.0f), dt(deltaTime), clip_pushed(false) {
+          pad_x(18.0f), dt(dtime), clip_pushed(false), hover_amount(0),
+          has_master(false), master_on(false), master_alpha(1.0f) {
 
         auto it = section_open.find(sid);
-        if (it == section_open.end()) {
-            section_open[sid] = true;
-            open = true;
-        } else {
-            open = it->second;
-        }
+        if (it == section_open.end()) { section_open[sid] = true; open = true; }
+        else { open = it->second; }
 
         float& a = AnimState(section_anim, sid, open ? 1.0f : 0.0f);
         a = SmoothLerp(a, open ? 1.0f : 0.0f, 16.0f, dt);
         anim_progress = a;
 
-        float min_h = HEADER_H + 2;
+        float min_h = HEADER_H + 4;
         h = min_h + (h_target - min_h) * EaseOutCubic(anim_progress);
 
         bool hovered = ImGui::IsMouseHoveringRect(pos, ImVec2(pos.x + w, pos.y + h));
         float& hv = AnimState(hdr_hover_anim, std::string("c_") + sid, 0.0f);
         hv = SmoothLerp(hv, hovered ? 1.0f : 0.0f, 18.0f, dt);
+        hover_amount = hv;
 
-        ImU32 bg = LerpColor(C_BG_CARD, C_BG_CARD_HOV, hv * 0.5f);
-        ImU32 br = LerpColor(C_BORDER_SOFT, ScaleAlpha(C_ACCENT, 0.4f), hv * 0.3f);
+        float lift = hv * 1.8f;
+        pos.y -= lift;
 
-        float content_fade = Clamp01((tab_content_anim - 0.3f) / 0.4f);
-        DrawCardShadow(dl, pos, w, h, hv * content_fade * 0.6f);
+        float content_fade = Clamp01((tab_content_anim - 0.2f) / 0.5f);
+        DrawShadow(dl, pos, w, h, (0.25f + hv * 0.4f) * content_fade);
 
-        dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), bg, 8.0f);
-        dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), br, 8.0f, 0, 1.0f);
+        ImU32 bg_top = LerpColor(C_BG_CARD, C_BG_CARD_HOV, hv);
+        ImU32 bg_bot = LerpColor(C_BG_CARD_BOT, C_BG_CARD, hv * 0.6f);
+        dl->AddRectFilledMultiColor(pos, ImVec2(pos.x + w, pos.y + h), bg_top, bg_top, bg_bot, bg_bot);
 
-        ImU32 grad_top = ScaleAlpha(C_ACCENT, hv * 0.04f);
-        dl->AddRectFilledMultiColor(pos, ImVec2(pos.x + w, pos.y + 20),
-                                    grad_top, grad_top, IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0));
+        ImU32 br = LerpColor(C_BORDER, C_BORDER_BR, hv * 0.7f);
+        dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), br, 10.0f, 0, 1.0f);
+
+        ImU32 sheen = ScaleAlpha(C_ACCENT, hv * 0.06f);
+        dl->AddRectFilledMultiColor(pos, ImVec2(pos.x + w, pos.y + 24),
+                                    sheen, sheen, IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0));
+
+        dl->AddLine(ImVec2(pos.x + 1, pos.y + 1), ImVec2(pos.x + w - 1, pos.y + 1),
+                    ScaleAlpha(C_WHITE, 0.04f), 1.0f);
 
         dl->PushClipRect(pos, ImVec2(pos.x + w, pos.y + h), true);
         clip_pushed = true;
@@ -261,27 +353,71 @@ struct Card {
 
     ~Card() { if (clip_pushed) dl->PopClipRect(); }
 
-    void Header(const char* label) {
-        float& hv = AnimState(hdr_hover_anim, std::string("ch_") + id, 0.0f);
-        ImU32 txt_col = LerpColor(C_TEXT_BRIGHT, C_ACCENT_LIGHT, hv * 0.2f);
+    void Header(const char* label, bool* master = nullptr, const char* desc = nullptr) {
+        ImU32 txt_col = LerpColor(C_TEXT_BRIGHT, C_WHITE, hover_amount * 0.3f);
         dl->AddText(ImVec2(pos.x + pad_x, pos.y + 13), txt_col, label);
 
-        ImVec2 cv(pos.x + w - pad_x - 1, pos.y + 19);
+        ImVec2 lbl_size = ImGui::CalcTextSize(label);
+        if (desc) {
+            dl->AddText(ImVec2(pos.x + pad_x + lbl_size.x + 10, pos.y + 14), C_TEXT_HINT, desc);
+        }
+
+        float right_x = pos.x + w - pad_x;
+        float tw = 30, th = 15;
+        ImVec2 tp(right_x - tw - 22, pos.y + 14);
+
+        if (master) {
+            has_master = true;
+            master_on = *master;
+
+            std::string tk = std::string(id) + "_mt";
+            float& ta = AnimState(tog_anim, tk, *master ? 1.0f : 0.0f);
+            ta = SmoothLerp(ta, *master ? 1.0f : 0.0f, 22.0f, dt);
+
+            ImU32 fill = LerpColor(C_BG_INPUT, C_ACCENT, ta);
+            dl->AddRectFilled(tp, ImVec2(tp.x + tw, tp.y + th), fill, th * 0.5f);
+            dl->AddRect(tp, ImVec2(tp.x + tw, tp.y + th),
+                        LerpColor(C_BORDER, C_ACCENT, ta * 0.5f), th * 0.5f, 0, 1.0f);
+
+            if (ta > 0.3f) {
+                ImU32 glow = ScaleAlpha(C_ACCENT_GLOW, (ta - 0.3f) * 0.8f);
+                dl->AddRect(ImVec2(tp.x - 2, tp.y - 2), ImVec2(tp.x + tw + 2, tp.y + th + 2),
+                            glow, th * 0.5f + 2, 0, 1.5f);
+            }
+
+            float kr = (th - 4) * 0.5f;
+            float kx = tp.x + 2 + kr + (tw - 4 - kr * 2) * EaseOutBack(ta);
+            dl->AddCircleFilled(ImVec2(kx, tp.y + th * 0.5f), kr, C_WHITE);
+            if (ta > 0.4f) {
+                dl->AddCircleFilled(ImVec2(kx, tp.y + th * 0.5f), kr - 1.5f, ScaleAlpha(C_ACCENT, (ta - 0.4f) * 0.3f));
+            }
+
+            master_alpha = 0.45f + ta * 0.55f;
+        }
+
+        ImVec2 cv(right_x - 2, pos.y + 20);
         float rot = (anim_progress - 1.0f) * 1.5708f;
         float cr = cosf(rot), sr = sinf(rot);
         auto rp = [&](float dx, float dy) {
             return ImVec2(cv.x + dx * cr - dy * sr, cv.y + dx * sr + dy * cr);
         };
-        ImU32 chev_col = LerpColor(C_TEXT_DIM, C_ACCENT, anim_progress * 0.3f);
+        ImU32 chev_col = LerpColor(C_TEXT_DIM, C_ACCENT, anim_progress * 0.4f + hover_amount * 0.3f);
         dl->AddTriangleFilled(rp(-4, -2), rp(4, -2), rp(0, 3), chev_col);
 
-        if (anim_progress > 0.4f) {
-            float line_alpha = (anim_progress - 0.4f) / 0.6f;
-            dl->AddLine(ImVec2(pos.x + pad_x, pos.y + HEADER_H - 1),
-                        ImVec2(pos.x + w - pad_x, pos.y + HEADER_H - 1),
-                        ScaleAlpha(C_ACCENT, line_alpha * 0.3f), 0.5f);
+        if (anim_progress > 0.3f) {
+            float la = (anim_progress - 0.3f) / 0.7f;
+            float lx0 = pos.x + pad_x, lx1 = pos.x + w - pad_x;
+            float ly = pos.y + HEADER_H - 4;
+            int seg = 24;
+            for (int i = 0; i < seg; i++) {
+                float t0 = i / (float)seg, t1 = (i + 1) / (float)seg;
+                float fade = sinf((t0 + t1) * 0.5f * 3.1415f);
+                ImU32 c = ScaleAlpha(C_ACCENT, la * 0.22f * fade);
+                dl->AddLine(ImVec2(lx0 + (lx1 - lx0) * t0, ly), ImVec2(lx0 + (lx1 - lx0) * t1, ly), c, 1.0f);
+            }
         }
 
+        // Header click first (full width), master toggle click last so it wins in overlap
         ImGui::SetCursorScreenPos(pos);
         ImGui::PushID(id);
         ImGui::InvisibleButton("##hdr", ImVec2(w, HEADER_H));
@@ -290,7 +426,19 @@ struct Card {
             open = section_open[id];
         }
         ImGui::PopID();
-        y = HEADER_H;
+
+        if (master) {
+            ImGui::SetCursorScreenPos(tp);
+            ImGui::PushID(id);
+            ImGui::InvisibleButton("##mt", ImVec2(tw, th));
+            if (ImGui::IsItemClicked()) {
+                *master = !*master;
+                ShowToast(std::string(label) + (*master ? " enabled" : " disabled"),
+                          *master ? C_SUCCESS : C_ACCENT_DIM);
+            }
+            ImGui::PopID();
+        }
+        y = HEADER_H + 4;
     }
 
     bool Chk(const char* label, bool* v) {
@@ -301,42 +449,54 @@ struct Card {
         ca = SmoothLerp(ca, *v ? 1.0f : 0.0f, 24.0f, dt);
 
         auto prev_it = chk_prev_val.find(key);
-        if (prev_it == chk_prev_val.end()) {
-            chk_prev_val[key] = *v;
-        } else if (prev_it->second != *v) {
-            chk_last_change_time[key] = ImGui::GetTime();
-            prev_it->second = *v;
-        }
+        if (prev_it == chk_prev_val.end()) chk_prev_val[key] = *v;
+        else if (prev_it->second != *v) { chk_last_change_time[key] = ImGui::GetTime(); prev_it->second = *v; }
 
         auto ct_it = chk_last_change_time.find(key);
-        double time_since = ct_it != chk_last_change_time.end() ? ImGui::GetTime() - ct_it->second : 10.0;
-        float highlight = Clamp01(1.0f - (float)(time_since / 0.4));
+        double ts = ct_it != chk_last_change_time.end() ? ImGui::GetTime() - ct_it->second : 10.0;
+        float hl = Clamp01(1.0f - (float)(ts / 0.4));
+
+        std::string hk = std::string(id) + "_chk_h_" + label;
+        ImVec2 row_min(pos.x + pad_x - 6, pos.y + y - 1);
+        ImVec2 row_max(pos.x + w - pad_x + 6, pos.y + y + CHK_STEP - 3);
+        bool row_hov = ImGui::IsMouseHoveringRect(row_min, row_max);
+        float& rh = AnimState(item_hover_anim_get(hk), hk, 0.0f);
+        rh = SmoothLerp(rh, row_hov ? 1.0f : 0.0f, 20.0f, dt);
+        if (rh > 0.01f) {
+            dl->AddRectFilled(row_min, row_max, ScaleAlpha(C_WHITE, rh * 0.025f), 4.0f);
+        }
 
         float sz = 12.0f;
         ImVec2 cp(pos.x + pad_x, pos.y + y + 3);
         ImU32 brd = LerpColor(C_BORDER, C_ACCENT, ca);
+        dl->AddRectFilled(cp, ImVec2(cp.x + sz, cp.y + sz), ScaleAlpha(C_BG_INPUT, 1.0f - ca), 3.0f);
         dl->AddRect(cp, ImVec2(cp.x + sz, cp.y + sz), brd, 3.0f, 0, 1.0f);
 
-        if (highlight > 0.1f) {
+        if (hl > 0.1f) {
             dl->AddRect(ImVec2(cp.x - 2, cp.y - 2), ImVec2(cp.x + sz + 2, cp.y + sz + 2),
-                        ScaleAlpha(C_ACCENT, highlight * 0.4f), 3.0f, 0, 1.0f);
+                        ScaleAlpha(C_ACCENT, hl * 0.4f), 3.0f, 0, 1.0f);
         }
 
         DrawAnimatedCheckmark(dl, cp, sz, ca);
-        ImU32 lbl_col = LerpColor(C_TEXT, C_ACCENT_LIGHT, highlight * 0.3f);
-        dl->AddText(ImVec2(cp.x + sz + 7, cp.y - 2), lbl_col, label);
+        ImU32 lbl_col = LerpColor(C_TEXT, C_ACCENT_LIGHT, hl * 0.3f);
+        lbl_col = ScaleAlpha(lbl_col, master_alpha);
+        dl->AddText(ImVec2(cp.x + sz + 8, cp.y - 2), lbl_col, label);
 
-        if (anim_progress > 0.65f) {
-            ImGui::SetCursorScreenPos(ImVec2(pos.x + pad_x - 4, pos.y + y));
-            ImGui::PushID(id);
-            ImGui::PushID(label);
-            ImGui::InvisibleButton("##chk", ImVec2(w - pad_x * 2, CHK_STEP - 2));
+        if (anim_progress > 0.6f) {
+            ImGui::SetCursorScreenPos(row_min);
+            ImGui::PushID(id); ImGui::PushID(label);
+            ImGui::InvisibleButton("##chk", ImVec2(row_max.x - row_min.x, row_max.y - row_min.y));
             if (ImGui::IsItemClicked()) *v = !*v;
-            ImGui::PopID();
-            ImGui::PopID();
+            ImGui::PopID(); ImGui::PopID();
         }
         y += CHK_STEP;
         return true;
+    }
+
+    // Tiny helper so we can use a per-row hover anim map
+    std::map<std::string, float>& item_hover_anim_get(const std::string&) {
+        static std::map<std::string, float> m;
+        return m;
     }
 
     bool ChkTog(const char* label, bool* v, bool* tog, ImU32 tog_color = 0) {
@@ -347,42 +507,35 @@ struct Card {
 
         float sz = 12.0f;
         ImVec2 cp(pos.x + pad_x, pos.y + y + 3);
+        dl->AddRectFilled(cp, ImVec2(cp.x + sz, cp.y + sz), ScaleAlpha(C_BG_INPUT, 1.0f - ca), 3.0f);
         dl->AddRect(cp, ImVec2(cp.x + sz, cp.y + sz), LerpColor(C_BORDER, C_ACCENT, ca), 3.0f, 0, 1.0f);
         DrawAnimatedCheckmark(dl, cp, sz, ca);
-        dl->AddText(ImVec2(cp.x + sz + 7, cp.y - 2), C_TEXT, label);
+        dl->AddText(ImVec2(cp.x + sz + 8, cp.y - 2), ScaleAlpha(C_TEXT, master_alpha), label);
 
         std::string tk = std::string(id) + "_tg_" + label;
         float& ta = AnimState(tog_anim, tk, *tog ? 1.0f : 0.0f);
         ta = SmoothLerp(ta, *tog ? 1.0f : 0.0f, 22.0f, dt);
 
-        float tw = 28, th = 14;
-        ImVec2 tp(pos.x + w - pad_x - tw, pos.y + y + 2);
+        float tw = 26, th = 13;
+        ImVec2 tp(pos.x + w - pad_x - tw, pos.y + y + 3);
         ImU32 tcol = tog_color ? tog_color : C_ACCENT;
         ImU32 fill = LerpColor(C_BG_INPUT, tcol, ta);
         dl->AddRectFilled(tp, ImVec2(tp.x + tw, tp.y + th), fill, th * 0.5f);
         dl->AddRect(tp, ImVec2(tp.x + tw, tp.y + th), LerpColor(C_BORDER, tcol, ta * 0.5f), th * 0.5f, 0, 1.0f);
 
-        if (ta > 0.3f) {
-            ImU32 glow = ScaleAlpha(tcol, (ta - 0.3f) * 0.25f);
-            dl->AddRect(ImVec2(tp.x - 2, tp.y - 2), ImVec2(tp.x + tw + 2, tp.y + th + 2),
-                        glow, th * 0.5f + 2, 0, 1.0f);
-        }
-
         float kr = (th - 4) * 0.5f;
-        float kx = tp.x + 2 + kr + (tw - 4 - kr * 2) * ta;
+        float kx = tp.x + 2 + kr + (tw - 4 - kr * 2) * EaseOutBack(ta);
         dl->AddCircleFilled(ImVec2(kx, tp.y + th * 0.5f), kr, C_WHITE);
 
-        if (anim_progress > 0.65f) {
+        if (anim_progress > 0.6f) {
             ImGui::SetCursorScreenPos(ImVec2(pos.x + pad_x - 4, pos.y + y));
-            ImGui::PushID(id);
-            ImGui::PushID(label);
-            ImGui::InvisibleButton("##ct_chk", ImVec2(w - pad_x * 2 - tw - 6, CHK_STEP - 2));
+            ImGui::PushID(id); ImGui::PushID(label);
+            ImGui::InvisibleButton("##ct_c", ImVec2(w - pad_x * 2 - tw - 6, CHK_STEP - 2));
             if (ImGui::IsItemClicked()) *v = !*v;
             ImGui::SetCursorScreenPos(tp);
-            ImGui::InvisibleButton("##ct_tog", ImVec2(tw, th));
+            ImGui::InvisibleButton("##ct_t", ImVec2(tw, th));
             if (ImGui::IsItemClicked()) *tog = !*tog;
-            ImGui::PopID();
-            ImGui::PopID();
+            ImGui::PopID(); ImGui::PopID();
         }
         y += CHK_STEP;
         return true;
@@ -390,18 +543,16 @@ struct Card {
 
     void KB(const char* label, int* key) {
         bool is_listening = (key_listening && listening_key == key);
-
         if (is_listening) {
             if (listening_wait_release) {
-                bool any_down = false;
-                for (int i = 1; i < 256; i++) {
-                    if (GetAsyncKeyState(i) & 0x8000) { any_down = true; break; }
-                }
-                if (!any_down) listening_wait_release = false;
+                bool any = false;
+                for (int i = 1; i < 256; i++) if (GetAsyncKeyState(i) & 0x8000) { any = true; break; }
+                if (!any) listening_wait_release = false;
             } else {
                 for (int i = 1; i < 256; i++) {
                     if (GetAsyncKeyState(i) & 0x8000) {
                         *key = (i == VK_ESCAPE) ? 0 : i;
+                        ShowToast("keybind set: " + KeyCodeToString(*key));
                         key_listening = false;
                         listening_key = nullptr;
                         is_listening = false;
@@ -412,52 +563,52 @@ struct Card {
         }
 
         if (anim_progress < 0.01f) { y += KB_STEP; return; }
-        dl->AddText(ImVec2(pos.x + pad_x, pos.y + y + 3), C_TEXT, label);
+        dl->AddText(ImVec2(pos.x + pad_x, pos.y + y + 4), ScaleAlpha(C_TEXT, master_alpha), label);
 
-        float bw = 68, bh = 19;
+        float bw = 76, bh = 20;
         ImVec2 bp(pos.x + w - bw - pad_x, pos.y + y + 1);
 
         std::string kk = std::string(id) + "_kb_" + label;
         float& kp = AnimState(kb_press_anim, kk, 0.0f);
         kp = SmoothLerp(kp, is_listening ? 1.0f : 0.0f, 20.0f, dt);
 
-        ImU32 bg = LerpColor(C_BG_INPUT, ScaleAlpha(C_ACCENT, 0.4f), kp);
+        ImU32 bg = LerpColor(C_BG_INPUT, ScaleAlpha(C_ACCENT, 0.35f), kp);
         ImU32 brd = LerpColor(C_BORDER, C_ACCENT, kp);
-        dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + bh), bg, 3.0f);
-        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), brd, 3.0f, 0, 1.0f);
+        dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + bh), bg, 4.0f);
+        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), brd, 4.0f, 0, 1.0f);
 
-        DrawKeyboardIcon(dl, ImVec2(bp.x + 5, bp.y + 4), C_ACCENT);
+        DrawKeyboardIcon(dl, ImVec2(bp.x + 6, bp.y + 5), is_listening ? C_ACCENT : C_TEXT_DIM);
         std::string s = is_listening ? "..." : KeyCodeToString(*key);
         ImVec2 ts = ImGui::CalcTextSize(s.c_str());
-        dl->AddText(ImVec2(bp.x + 25, bp.y + (bh - ts.y) / 2), is_listening ? C_ACCENT : C_TEXT, s.c_str());
+        dl->AddText(ImVec2(bp.x + 27, bp.y + (bh - ts.y) * 0.5f), is_listening ? C_ACCENT : C_TEXT, s.c_str());
 
         if (is_listening) {
-            float pulse = fmodf((float)ImGui::GetTime() * 2.0f, 1.0f);
-            DrawPulsingDot(dl, ImVec2(bp.x + bw - 6, bp.y + bh / 2), pulse, C_ACCENT);
+            DrawPulsingDot(dl, ImVec2(bp.x + bw - 7, bp.y + bh * 0.5f),
+                           fmodf((float)ImGui::GetTime() * 2.0f, 1.0f), C_ACCENT);
         }
 
-        if (anim_progress > 0.65f) {
+        if (anim_progress > 0.6f) {
             ImGui::SetCursorScreenPos(bp);
-            ImGui::PushID(id);
-            ImGui::PushID(label);
+            ImGui::PushID(id); ImGui::PushID(label);
             ImGui::InvisibleButton("##kb", ImVec2(bw, bh));
             if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !is_listening) {
                 *key = 0;
+                ShowToast(std::string(label) + " cleared", C_WARNING);
             } else if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
                 key_listening = true;
                 listening_key = key;
                 listening_wait_release = true;
+                ShowToast("press any key (esc=clear)", C_TEXT_DIM, 1.5f);
             }
-            ImGui::PopID();
-            ImGui::PopID();
+            ImGui::PopID(); ImGui::PopID();
         }
         y += KB_STEP;
     }
 
     void Combo(const char* label, int* v, const std::vector<std::string>& items) {
         if (anim_progress < 0.01f) { y += CMB_STEP; return; }
-        dl->AddText(ImVec2(pos.x + pad_x, pos.y + y), C_TEXT, label);
-        y += 16;
+        dl->AddText(ImVec2(pos.x + pad_x, pos.y + y), ScaleAlpha(C_TEXT, master_alpha), label);
+        y += 17;
         ImVec2 bp(pos.x + pad_x, pos.y + y);
         float bw = w - pad_x * 2, bh = 26;
         int count = (int)items.size();
@@ -467,66 +618,76 @@ struct Card {
         bool bhov = ImGui::IsMouseHoveringRect(bp, ImVec2(bp.x + bw, bp.y + bh));
         hv = SmoothLerp(hv, bhov ? 1.0f : 0.0f, 20.0f, dt);
 
-        ImU32 bg = LerpColor(C_BG_INPUT, ScaleAlpha(C_ACCENT, 0.2f), hv * 0.3f);
-        dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + bh), bg, 3.0f);
-        ImU32 br = LerpColor(C_BORDER, LerpColor(C_BORDER, C_ACCENT, 0.4f), hv);
-        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), br, 3.0f, 0, 1.0f);
+        ImU32 bg = LerpColor(C_BG_INPUT, C_BG_INPUT_HOV, hv);
+        dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + bh), bg, 4.0f);
+        ImU32 br = LerpColor(C_BORDER, ScaleAlpha(C_ACCENT, 0.6f), hv * 0.7f);
+        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), br, 4.0f, 0, 1.0f);
 
         if (*v >= 0 && *v < count) {
             ImU32 txt_col = LerpColor(C_TEXT, C_ACCENT_LIGHT, hv * 0.3f);
-            dl->AddText(ImVec2(bp.x + 10, bp.y + 6), txt_col, items[*v].c_str());
+            dl->AddText(ImVec2(bp.x + 12, bp.y + 6), txt_col, items[*v].c_str());
         }
 
         ImU32 arr_col = LerpColor(C_TEXT_DIM, C_ACCENT, hv * 0.5f);
-        ImVec2 al(bp.x + bw - 22, bp.y + bh * 0.5f);
-        ImVec2 ar(bp.x + bw - 10, bp.y + bh * 0.5f);
-        dl->AddTriangleFilled(ImVec2(al.x + 2, al.y - 3), ImVec2(al.x + 2, al.y + 3), ImVec2(al.x - 2, al.y), arr_col);
-        dl->AddTriangleFilled(ImVec2(ar.x - 2, ar.y - 3), ImVec2(ar.x - 2, ar.y + 3), ImVec2(ar.x + 2, ar.y), arr_col);
+        float ay = bp.y + bh * 0.5f;
+        dl->AddTriangleFilled(ImVec2(bp.x + bw - 22, ay - 3), ImVec2(bp.x + bw - 22, ay + 3), ImVec2(bp.x + bw - 26, ay), arr_col);
+        dl->AddTriangleFilled(ImVec2(bp.x + bw - 12, ay - 3), ImVec2(bp.x + bw - 12, ay + 3), ImVec2(bp.x + bw - 8, ay), arr_col);
 
-        if (anim_progress > 0.65f && count > 0) {
-            ImGui::SetCursorScreenPos(bp);
-            ImGui::PushID(id);
-            ImGui::PushID(label);
-            ImGui::InvisibleButton("##cmb", ImVec2(bw, bh));
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
-                *v = (*v + 1) % count;
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
-                *v = (*v - 1 + count) % count;
-            ImGui::PopID();
-            ImGui::PopID();
+        if (count > 1) {
+            float pip_w = (bw - 24) / (float)count;
+            for (int i = 0; i < count; i++) {
+                float pip_x = bp.x + 12 + i * pip_w + pip_w * 0.5f - 1;
+                ImU32 pc = (i == *v) ? C_ACCENT : ScaleAlpha(C_BORDER, 0.5f);
+                dl->AddRectFilled(ImVec2(pip_x, bp.y + bh - 4), ImVec2(pip_x + 2, bp.y + bh - 2), pc);
+            }
         }
-        y += bh + 8;
+
+        if (anim_progress > 0.6f && count > 0) {
+            ImGui::SetCursorScreenPos(bp);
+            ImGui::PushID(id); ImGui::PushID(label);
+            ImGui::InvisibleButton("##cmb", ImVec2(bw, bh));
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) *v = (*v + 1) % count;
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) *v = (*v - 1 + count) % count;
+            if (ImGui::IsItemHovered()) {
+                float wheel = ImGui::GetIO().MouseWheel;
+                if (wheel > 0) *v = (*v - 1 + count) % count;
+                else if (wheel < 0) *v = (*v + 1) % count;
+            }
+            ImGui::PopID(); ImGui::PopID();
+        }
+        y += bh + 7;
     }
 
     void Sld(const char* label, int* v, int vmin, int vmax, const char* suffix = "") {
         if (anim_progress < 0.01f) { y += SLD_STEP; return; }
-        std::string sld_key = std::string(id) + "_sld_" + label;
+        std::string sk = std::string(id) + "_sld_" + label;
         float range = (float)(vmax - vmin);
 
-        auto sv_it = sld_last_val.find(sld_key);
-        if (sv_it == sld_last_val.end()) {
-            sld_last_val[sld_key] = *v;
-        } else if (sv_it->second != *v) {
-            sv_it->second = *v;
-            sld_last_change_time[sld_key] = ImGui::GetTime();
-        }
+        auto sv_it = sld_last_val.find(sk);
+        if (sv_it == sld_last_val.end()) sld_last_val[sk] = *v;
+        else if (sv_it->second != *v) { sv_it->second = *v; sld_last_change_time[sk] = ImGui::GetTime(); }
 
-        auto ct_it = sld_last_change_time.find(sld_key);
-        double time_since = ct_it != sld_last_change_time.end() ? ImGui::GetTime() - ct_it->second : 10.0;
-        float highlight = Clamp01(1.0f - (float)(time_since / 0.5));
+        auto ct_it = sld_last_change_time.find(sk);
+        double ts = ct_it != sld_last_change_time.end() ? ImGui::GetTime() - ct_it->second : 10.0;
+        float hl = Clamp01(1.0f - (float)(ts / 0.5));
 
-        dl->AddText(ImVec2(pos.x + pad_x, pos.y + y), C_TEXT, label);
+        dl->AddText(ImVec2(pos.x + pad_x, pos.y + y), ScaleAlpha(C_TEXT, master_alpha), label);
         char val_str[32];
         sprintf_s(val_str, "%d%s", *v, suffix);
         ImVec2 vs = ImGui::CalcTextSize(val_str);
-        ImU32 val_col = LerpColor(C_TEXT_DIM, C_ACCENT_LIGHT, highlight * 0.6f);
-        dl->AddText(ImVec2(pos.x + w - vs.x - pad_x, pos.y + y), val_col, val_str);
 
-        y += 16;
-        float th = 3;
+        float vpad = 8, vh = vs.y + 2;
+        ImVec2 vp(pos.x + w - vs.x - vpad * 2 - pad_x, pos.y + y - 1);
+        ImU32 vbg = LerpColor(C_BG_PILL, ScaleAlpha(C_ACCENT, 0.4f), hl * 0.6f);
+        DrawPill(dl, vp, vs.x + vpad * 2, vh, vbg);
+        ImU32 val_col = LerpColor(C_TEXT_BRIGHT, C_WHITE, hl * 0.5f);
+        dl->AddText(ImVec2(vp.x + vpad, vp.y + 1), val_col, val_str);
+
+        y += 18;
+        float th = 4;
         ImVec2 tp(pos.x + pad_x, pos.y + y + 3);
         float tw = w - pad_x * 2;
-        dl->AddRectFilled(tp, ImVec2(tp.x + tw, tp.y + th), C_BG_INPUT, 1.5f);
+        dl->AddRectFilled(tp, ImVec2(tp.x + tw, tp.y + th), C_BG_INPUT, 2.0f);
 
         float r = (range > 0) ? Clamp01((float)(*v - vmin) / range) : 0.0f;
         if (tw * r > 1.0f)
@@ -534,22 +695,23 @@ struct Card {
                                         C_ACCENT_DIM, C_ACCENT, C_ACCENT, C_ACCENT_DIM);
 
         bool hovered = ImGui::IsMouseHoveringRect(ImVec2(tp.x, tp.y - 8), ImVec2(tp.x + tw, tp.y + 12));
-        float& sa = AnimState(sld_hover_anim, sld_key, 1.0f);
-        sa = SmoothLerp(sa, hovered ? 1.35f : 1.0f, 24.0f, dt);
-        float knob = 5.0f * sa;
+        float& sa = AnimState(sld_hover_anim, sk, 1.0f);
+        sa = SmoothLerp(sa, hovered ? 1.4f : 1.0f, 22.0f, dt);
+        float knob = 5.5f * sa;
         float kx = tp.x + tw * r;
         float ky = tp.y + th * 0.5f;
 
         if (sa > 1.05f) {
-            float glow = (sa - 1.0f) / 0.35f;
-            dl->AddCircleFilled(ImVec2(kx, ky), knob + 3, ScaleAlpha(C_ACCENT, glow * 0.3f));
+            float g = (sa - 1.0f) / 0.4f;
+            dl->AddCircleFilled(ImVec2(kx, ky), knob + 4, ScaleAlpha(C_ACCENT, g * 0.3f));
+            dl->AddCircleFilled(ImVec2(kx, ky), knob + 2, ScaleAlpha(C_ACCENT, g * 0.4f));
         }
         dl->AddCircleFilled(ImVec2(kx, ky), knob, C_WHITE);
+        dl->AddCircleFilled(ImVec2(kx, ky), knob - 1.5f, ScaleAlpha(C_ACCENT, hl * 0.5f));
 
-        if (anim_progress > 0.65f) {
+        if (anim_progress > 0.6f) {
             ImGui::SetCursorScreenPos(ImVec2(tp.x, tp.y - 8));
-            ImGui::PushID(id);
-            ImGui::PushID(label);
+            ImGui::PushID(id); ImGui::PushID(label);
             ImGui::InvisibleButton("##sld", ImVec2(tw, 16));
             if (ImGui::IsItemActive()) {
                 float mx = ImGui::GetIO().MousePos.x;
@@ -564,15 +726,13 @@ struct Card {
                     if (*v > vmax) *v = vmax;
                 }
             }
-            ImGui::PopID();
-            ImGui::PopID();
+            ImGui::PopID(); ImGui::PopID();
         }
-        y += SLD_STEP - 16;
+        y += SLD_STEP - 18;
     }
 
     void Btn(const char* label, bool* clicked_out, ImU32 btn_bg = 0, ImU32 btn_brd = 0) {
         if (anim_progress < 0.01f) { y += BTN_H + 4; return; }
-
         ImVec2 bp(pos.x + pad_x, pos.y + y);
         float bw = w - pad_x * 2;
 
@@ -581,47 +741,150 @@ struct Card {
         bool bhov = ImGui::IsMouseHoveringRect(bp, ImVec2(bp.x + bw, bp.y + BTN_H));
         hv = SmoothLerp(hv, bhov ? 1.0f : 0.0f, 22.0f, dt);
 
-        ImU32 bg = btn_bg ? btn_bg : IM_COL32(180, 50, 50, 200);
-        ImU32 border = btn_brd ? btn_brd : IM_COL32(200, 60, 60, 255);
-        ImU32 bg_final = LerpColor(bg, ScaleAlpha(C_ACCENT, 0.8f), hv * 0.4f);
-        ImU32 brd_final = LerpColor(border, C_ACCENT_LIGHT, hv * 0.4f);
+        ImU32 bg = btn_bg ? btn_bg : IM_COL32(180, 50, 55, 220);
+        ImU32 border = btn_brd ? btn_brd : C_ACCENT_LIGHT;
+        ImU32 bg_top = LerpColor(bg, ScaleAlpha(C_ACCENT, 0.85f), hv * 0.4f);
+        ImU32 bg_bot = LerpColor(ScaleAlpha(bg, 0.85f), bg, hv * 0.5f);
+        ImU32 brd = LerpColor(border, C_ACCENT_LIGHT, hv * 0.4f);
 
-        dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + BTN_H), bg_final, 4.0f);
-        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + BTN_H), brd_final, 4.0f, 0, 1.0f);
+        dl->AddRectFilledMultiColor(bp, ImVec2(bp.x + bw, bp.y + BTN_H), bg_top, bg_top, bg_bot, bg_bot);
+        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + BTN_H), brd, 5.0f, 0, 1.0f);
 
         if (hv > 0.05f) {
             dl->AddRect(ImVec2(bp.x - 1, bp.y - 1), ImVec2(bp.x + bw + 1, bp.y + BTN_H + 1),
-                        ScaleAlpha(border, hv * 0.3f), 5.0f, 0, 1.0f);
+                        ScaleAlpha(border, hv * 0.4f), 6.0f, 0, 1.5f);
         }
 
         ImVec2 ts = ImGui::CalcTextSize(label);
         dl->AddText(ImVec2(bp.x + (bw - ts.x) * 0.5f, bp.y + (BTN_H - ts.y) * 0.5f), C_WHITE, label);
 
         *clicked_out = false;
-        if (anim_progress > 0.65f) {
+        if (anim_progress > 0.6f) {
             ImGui::SetCursorScreenPos(bp);
-            ImGui::PushID(id);
-            ImGui::PushID(label);
+            ImGui::PushID(id); ImGui::PushID(label);
             ImGui::InvisibleButton("##btn", ImVec2(bw, BTN_H));
             if (ImGui::IsItemClicked()) *clicked_out = true;
-            ImGui::PopID();
-            ImGui::PopID();
+            ImGui::PopID(); ImGui::PopID();
         }
         y += BTN_H + 4;
+    }
+
+    void Section(const char* label) {
+        if (anim_progress < 0.5f) { y += SEC_STEP; return; }
+        float a = (anim_progress - 0.5f) / 0.5f;
+        ImU32 col = ScaleAlpha(C_TEXT_HINT, a);
+        dl->AddText(ImVec2(pos.x + pad_x, pos.y + y + 4), col, label);
+        ImVec2 ls = ImGui::CalcTextSize(label);
+        float lx0 = pos.x + pad_x + ls.x + 10;
+        float lx1 = pos.x + w - pad_x;
+        float ly = pos.y + y + ls.y * 0.5f + 4;
+        dl->AddLine(ImVec2(lx0, ly), ImVec2(lx1, ly), ScaleAlpha(C_BORDER, a * 0.7f), 1.0f);
+        y += SEC_STEP;
     }
 
     void Space(float px) { y += px; }
 };
 
+// ========================= NAV ITEM =========================
+
+typedef void (*IconFn)(ImDrawList*, ImVec2, ImU32);
+
+struct NavSlot {
+    const char* label;
+    IconFn icon;
+};
+
+const NavSlot NAV[] = {
+    {"aimbot",   DrawCrosshairIcon},
+    {"visuals",  DrawEyeIcon},
+    {"overlays", DrawOverlayIcon},
+    {"exploits", DrawBoltIcon},
+    {"configs",  DrawListIcon},
+    {"settings", DrawSettingsIcon},
+};
+const int NAV_COUNT = sizeof(NAV) / sizeof(NAV[0]);
+
+bool RenderNavItem(ImDrawList* dl, ImVec2 origin, int idx, bool active, float dt) {
+    float w = 200 - 24, h = 38;
+    ImVec2 pos(origin.x + 12, origin.y);
+
+    bool hov = ImGui::IsMouseHoveringRect(pos, ImVec2(pos.x + w, pos.y + h));
+    std::string key = std::string("nav_") + NAV[idx].label;
+    float& ha = AnimState(nav_hover_anim, key, 0.0f);
+    ha = SmoothLerp(ha, (hov || active) ? 1.0f : 0.0f, 22.0f, dt);
+
+    if (ha > 0.01f) {
+        ImU32 bg = ScaleAlpha(C_WHITE, ha * 0.04f);
+        if (active) bg = LerpColor(bg, ScaleAlpha(C_ACCENT, 0.12f), 1.0f);
+        dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), bg, 6.0f);
+    }
+
+    ImU32 ic_col = LerpColor(C_TEXT_DIM, C_ACCENT, active ? 1.0f : ha * 0.4f);
+    NAV[idx].icon(dl, ImVec2(pos.x + 22, pos.y + h * 0.5f), ic_col);
+
+    ImU32 txt_col = LerpColor(C_TEXT_DIM, C_TEXT_BRIGHT, active ? 1.0f : ha * 0.7f);
+    if (active) txt_col = C_WHITE;
+    ImVec2 ts = ImGui::CalcTextSize(NAV[idx].label);
+    dl->AddText(ImVec2(pos.x + 44, pos.y + (h - ts.y) * 0.5f), txt_col, NAV[idx].label);
+
+    if (active) {
+        float dot_x = pos.x + w - 12;
+        float dot_y = pos.y + h * 0.5f;
+        dl->AddCircleFilled(ImVec2(dot_x, dot_y), 2.5f, C_ACCENT);
+    }
+
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::PushID(idx);
+    ImGui::InvisibleButton("##nav", ImVec2(w, h));
+    bool clicked = ImGui::IsItemClicked();
+    ImGui::PopID();
+    return clicked;
+}
+
+void RenderToasts(ImDrawList* dl_fg, ImVec2 anchor, float dt) {
+    double now = ImGui::GetTime();
+    for (auto it = toasts.begin(); it != toasts.end(); ) {
+        double age = now - it->created;
+        if (age > it->life) { it = toasts.erase(it); continue; }
+        ++it;
+    }
+
+    float y = anchor.y;
+    for (auto it = toasts.rbegin(); it != toasts.rend(); ++it) {
+        double age = now - it->created;
+        float fade_in = Clamp01((float)(age / 0.25));
+        float fade_out = Clamp01((float)((it->life - age) / 0.4));
+        float a = fade_in * fade_out;
+        it->anim = SmoothLerp(it->anim, 1.0f, 20.0f, dt);
+
+        ImVec2 ts = ImGui::CalcTextSize(it->text.c_str());
+        float pad_x = 14, pad_y = 8;
+        float w = ts.x + pad_x * 2 + 24;
+        float h = ts.y + pad_y * 2;
+        ImVec2 pos(anchor.x - w, y - h);
+        pos.x += (1.0f - EaseOutCubic(it->anim)) * 30.0f;
+
+        DrawShadow(dl_fg, pos, w, h, 0.4f * a);
+        dl_fg->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), ScaleAlpha(IM_COL32(25, 27, 33, 250), a), 8.0f);
+        dl_fg->AddRect(pos, ImVec2(pos.x + w, pos.y + h), ScaleAlpha(C_BORDER_BR, a * 0.8f), 8.0f, 0, 1.0f);
+        dl_fg->AddRectFilled(pos, ImVec2(pos.x + 3, pos.y + h), ScaleAlpha(it->col, a), 1.5f);
+
+        DrawStatusDot(dl_fg, ImVec2(pos.x + 16, pos.y + h * 0.5f), it->col, (float)now);
+        dl_fg->AddText(ImVec2(pos.x + 30, pos.y + pad_y), ScaleAlpha(C_TEXT_BRIGHT, a), it->text.c_str());
+
+        y -= h + 8;
+    }
+}
+
 } // anonymous namespace
 
 void ApplyDarkTheme() {
     ImGuiStyle& s = ImGui::GetStyle();
-    s.WindowRounding = 10; s.FrameRounding = 4; s.GrabRounding = 4; s.PopupRounding = 4; s.ChildRounding = 8;
+    s.WindowRounding = 12; s.FrameRounding = 5; s.GrabRounding = 5; s.PopupRounding = 5; s.ChildRounding = 8;
     s.WindowPadding = ImVec2(0, 0); s.FramePadding = ImVec2(4, 3);
     s.Colors[ImGuiCol_WindowBg] = ImVec4(0, 0, 0, 0);
-    s.Colors[ImGuiCol_ChildBg] = ImVec4(0, 0, 0, 0);
-    s.Colors[ImGuiCol_Border] = ImVec4(0, 0, 0, 0);
+    s.Colors[ImGuiCol_ChildBg]  = ImVec4(0, 0, 0, 0);
+    s.Colors[ImGuiCol_Border]   = ImVec4(0, 0, 0, 0);
 }
 
 void RenderGui() {
@@ -630,128 +893,287 @@ void RenderGui() {
     if (dt > 0.1f) dt = 0.1f;
     gui_fade_anim = SmoothLerp(gui_fade_anim, 1.0f, 8.0f, dt);
 
-    ImVec2 base_size(920, 700);
+    ImVec2 base_size(1000, 700);
     ImVec2 scaled_size(base_size.x * menu_scale, base_size.y * menu_scale);
 
     ImGui::SetNextWindowSize(scaled_size, ImGuiCond_Always);
     ImGui::SetNextWindowPos(ImVec2(80, 50), ImGuiCond_FirstUseEver);
 
-    int window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                       ImGuiWindowFlags_NoBackground;
-
-    ImGui::Begin("##traceless", nullptr, window_flags);
+    int wf = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+             ImGuiWindowFlags_NoBackground;
+    ImGui::Begin("##traceless", nullptr, wf);
 
     ImVec2 wp = ImGui::GetWindowPos();
     ImVec2 ws = ImGui::GetWindowSize();
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
 
     float fade = EaseOutCubic(gui_fade_anim);
-    ImVec2 wp_offset(0, (1.0f - fade) * 14.0f);
+    float oy = (1.0f - fade) * 14.0f;
+    wp.y += oy;
 
-    float HDR_H = 38.0f, TAB_H = 40.0f;
+    const float TOPBAR_H = 60.0f;
+    const float SIDEBAR_W = 200.0f;
 
-    // Window dragging via header area
-    ImVec2 hdr_min(wp.x, wp.y + wp_offset.y);
-    ImVec2 hdr_max(wp.x + ws.x, wp.y + HDR_H + wp_offset.y);
+    // --- Window dragging via topbar ---
+    ImVec2 hdr_min(wp.x, wp.y), hdr_max(wp.x + ws.x, wp.y + TOPBAR_H);
     if (ImGui::IsMouseHoveringRect(hdr_min, hdr_max) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         dragging = true;
         drag_offset = ImVec2(ImGui::GetIO().MousePos.x - wp.x, ImGui::GetIO().MousePos.y - wp.y);
     }
     if (dragging) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            ImVec2 new_pos(ImGui::GetIO().MousePos.x - drag_offset.x, ImGui::GetIO().MousePos.y - drag_offset.y);
-            ImGui::SetWindowPos(new_pos);
-            wp = new_pos;
-        } else {
-            dragging = false;
-        }
+            ImVec2 np(ImGui::GetIO().MousePos.x - drag_offset.x, ImGui::GetIO().MousePos.y - drag_offset.y - oy);
+            ImGui::SetWindowPos(np);
+            wp = ImVec2(np.x, np.y + oy);
+        } else dragging = false;
     }
 
-    // Background
-    dl->AddRectFilled(ImVec2(wp.x, wp.y + wp_offset.y),
-                      ImVec2(wp.x + ws.x, wp.y + ws.y + wp_offset.y), C_BG_WIN, 10.0f);
-    dl->AddRect(ImVec2(wp.x, wp.y + wp_offset.y),
-                ImVec2(wp.x + ws.x, wp.y + ws.y + wp_offset.y),
-                ScaleAlpha(C_BORDER, 0.4f), 10.0f, 0, 1.0f);
+    // --- Window backdrop with soft accent glow ---
+    dl->AddRectFilled(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), C_BG_WIN, 12.0f);
 
-    // Header
-    dl->AddText(ImVec2(wp.x + 20, wp.y + 12 + wp_offset.y), C_ACCENT, "severance");
-    float sw_x = wp.x + 20 + ImGui::CalcTextSize("severance").x;
-    dl->AddText(ImVec2(sw_x, wp.y + 12 + wp_offset.y), C_TEXT_DIM, ".today");
+    // top-left accent glow (very subtle)
+    for (int i = 0; i < 8; i++) {
+        float t = i / 7.0f;
+        ImU32 g = ScaleAlpha(C_ACCENT, 0.025f * (1.0f - t));
+        dl->AddCircleFilled(ImVec2(wp.x + 60, wp.y + 60), 180 + i * 30, g);
+    }
 
-    const char* build_str = "build: nov 29 2025";
-    ImVec2 bs = ImGui::CalcTextSize(build_str);
-    dl->AddText(ImVec2(wp.x + ws.x - bs.x - 20, wp.y + 12 + wp_offset.y), C_TEXT_DIM, build_str);
+    // --- TOP BAR ---
+    dl->AddRectFilled(wp, ImVec2(wp.x + ws.x, wp.y + TOPBAR_H), C_BG_TOPBAR, 12.0f);
+    dl->AddRectFilled(ImVec2(wp.x, wp.y + TOPBAR_H - 8), ImVec2(wp.x + ws.x, wp.y + TOPBAR_H), C_BG_TOPBAR, 0.0f);
+    dl->AddLine(ImVec2(wp.x, wp.y + TOPBAR_H), ImVec2(wp.x + ws.x, wp.y + TOPBAR_H),
+                ScaleAlpha(C_BORDER_SOFT, 0.8f), 1.0f);
 
-    dl->AddLine(ImVec2(wp.x + 14, wp.y + HDR_H + wp_offset.y),
-                ImVec2(wp.x + ws.x - 14, wp.y + HDR_H + wp_offset.y),
+    // Logo
+    dl->AddRectFilled(ImVec2(wp.x + 22, wp.y + 22), ImVec2(wp.x + 38, wp.y + 38), C_ACCENT, 4.0f);
+    dl->AddRectFilled(ImVec2(wp.x + 26, wp.y + 26), ImVec2(wp.x + 34, wp.y + 34), C_BG_TOPBAR, 2.0f);
+    dl->AddCircleFilled(ImVec2(wp.x + 30, wp.y + 30), 2, C_ACCENT);
+
+    dl->AddText(ImVec2(wp.x + 50, wp.y + 17), C_TEXT_BRIGHT, "SEVERANCE");
+    ImVec2 brand_sz = ImGui::CalcTextSize("SEVERANCE");
+    dl->AddText(ImVec2(wp.x + 50 + brand_sz.x + 2, wp.y + 17), C_ACCENT, ".today");
+    dl->AddText(ImVec2(wp.x + 50, wp.y + 31), C_TEXT_HINT, "premium gameplay tools");
+
+    // Status pill (center)
+    {
+        float fps = ImGui::GetIO().Framerate;
+        char status_buf[64];
+        sprintf_s(status_buf, "ACTIVE  %.0f FPS", fps);
+        ImVec2 sts = ImGui::CalcTextSize(status_buf);
+        float pill_w = sts.x + 38;
+        float pill_h = 26;
+        ImVec2 pp(wp.x + ws.x * 0.5f - pill_w * 0.5f, wp.y + (TOPBAR_H - pill_h) * 0.5f);
+        DrawPill(dl, pp, pill_w, pill_h, C_BG_PILL, C_BORDER);
+        DrawStatusDot(dl, ImVec2(pp.x + 14, pp.y + pill_h * 0.5f), C_SUCCESS, (float)ImGui::GetTime());
+        dl->AddText(ImVec2(pp.x + 26, pp.y + (pill_h - sts.y) * 0.5f), C_TEXT_BRIGHT, status_buf);
+    }
+
+    // Build info + window controls (right)
+    {
+        const char* build_str = "build 1.2.0  nov 29 2025";
+        ImVec2 bs = ImGui::CalcTextSize(build_str);
+        dl->AddText(ImVec2(wp.x + ws.x - bs.x - 80, wp.y + 23), C_TEXT_HINT, build_str);
+
+        // Minimize (cosmetic)
+        ImVec2 mn_pos(wp.x + ws.x - 60, wp.y + 18);
+        float mn_sz = 24;
+        bool mn_hov = ImGui::IsMouseHoveringRect(mn_pos, ImVec2(mn_pos.x + mn_sz, mn_pos.y + mn_sz));
+        float& mh = AnimState(btn_hover_anim, "tb_mn", 0.0f);
+        mh = SmoothLerp(mh, mn_hov ? 1.0f : 0.0f, 20.0f, dt);
+        dl->AddRectFilled(mn_pos, ImVec2(mn_pos.x + mn_sz, mn_pos.y + mn_sz),
+                          ScaleAlpha(C_WHITE, mh * 0.06f), 4.0f);
+        DrawMinimizeIcon(dl, ImVec2(mn_pos.x + mn_sz * 0.5f, mn_pos.y + mn_sz * 0.5f),
+                         LerpColor(C_TEXT_DIM, C_TEXT_BRIGHT, mh));
+
+        // Close → unload
+        ImVec2 cl_pos(wp.x + ws.x - 32, wp.y + 18);
+        bool cl_hov = ImGui::IsMouseHoveringRect(cl_pos, ImVec2(cl_pos.x + mn_sz, cl_pos.y + mn_sz));
+        float& ch = AnimState(btn_hover_anim, "tb_cl", 0.0f);
+        ch = SmoothLerp(ch, cl_hov ? 1.0f : 0.0f, 20.0f, dt);
+        dl->AddRectFilled(cl_pos, ImVec2(cl_pos.x + mn_sz, cl_pos.y + mn_sz),
+                          ScaleAlpha(C_ACCENT, ch * 0.3f), 4.0f);
+        DrawCloseIcon(dl, ImVec2(cl_pos.x + mn_sz * 0.5f, cl_pos.y + mn_sz * 0.5f),
+                      LerpColor(C_TEXT_DIM, C_WHITE, ch));
+
+        ImGui::SetCursorScreenPos(cl_pos);
+        ImGui::InvisibleButton("##cl", ImVec2(mn_sz, mn_sz));
+        if (ImGui::IsItemClicked()) { should_unload = true; ShowToast("unloading cheat...", C_WARNING, 2.0f); }
+    }
+
+    // --- SIDEBAR ---
+    ImVec2 sb_pos(wp.x, wp.y + TOPBAR_H);
+    dl->AddRectFilled(sb_pos, ImVec2(sb_pos.x + SIDEBAR_W, wp.y + ws.y), C_BG_SIDEBAR, 0);
+    dl->AddLine(ImVec2(sb_pos.x + SIDEBAR_W, sb_pos.y), ImVec2(sb_pos.x + SIDEBAR_W, wp.y + ws.y),
                 ScaleAlpha(C_BORDER_SOFT, 0.6f), 1.0f);
 
-    // Tab transition animation
+    // small label above nav
+    dl->AddText(ImVec2(sb_pos.x + 18, sb_pos.y + 14), C_TEXT_HINT, "NAVIGATION");
+
+    float nav_y = sb_pos.y + 34;
+    float nav_item_h = 38;
+    float nav_gap = 4;
+    float active_y = 0, active_h = 0;
+    bool any_active = false;
+
+    for (int i = 0; i < NAV_COUNT; i++) {
+        if (RenderNavItem(dl, ImVec2(sb_pos.x, nav_y), i, active_tab == i, dt)) {
+            active_tab = i;
+        }
+        if (active_tab == i) {
+            active_y = nav_y;
+            active_h = nav_item_h;
+            any_active = true;
+        }
+        nav_y += nav_item_h + nav_gap;
+    }
+
+    // Active pill indicator (smooth spring)
+    if (any_active) {
+        if (!nav_pill_init) {
+            nav_pill_y = active_y;
+            nav_pill_h = active_h;
+            nav_pill_alpha = 1.0f;
+            nav_pill_init = true;
+        } else {
+            nav_pill_y = SmoothLerp(nav_pill_y, active_y, 18.0f, dt);
+            nav_pill_h = SmoothLerp(nav_pill_h, active_h, 18.0f, dt);
+            nav_pill_alpha = SmoothLerp(nav_pill_alpha, 1.0f, 14.0f, dt);
+        }
+        float py = nav_pill_y + (nav_pill_h - 20) * 0.5f;
+        dl->AddRectFilled(ImVec2(sb_pos.x + 4, py),
+                          ImVec2(sb_pos.x + 7, py + 20),
+                          ScaleAlpha(C_ACCENT, nav_pill_alpha), 1.5f);
+        dl->AddRectFilled(ImVec2(sb_pos.x + 2, py),
+                          ImVec2(sb_pos.x + 7, py + 20),
+                          ScaleAlpha(C_ACCENT_GLOW, nav_pill_alpha * 0.5f), 1.5f);
+    }
+
+    // Sidebar footer: separator + version info
+    float footer_y = wp.y + ws.y - 64;
+    dl->AddLine(ImVec2(sb_pos.x + 14, footer_y), ImVec2(sb_pos.x + SIDEBAR_W - 14, footer_y),
+                ScaleAlpha(C_BORDER_SOFT, 0.5f), 1.0f);
+    dl->AddText(ImVec2(sb_pos.x + 18, footer_y + 12), C_TEXT_HINT, "SESSION");
+
+    DrawStatusDot(dl, ImVec2(sb_pos.x + 22, footer_y + 36), C_SUCCESS, (float)ImGui::GetTime());
+    dl->AddText(ImVec2(sb_pos.x + 36, footer_y + 32), C_TEXT, "premium");
+
+    // --- CONTENT ---
     if (active_tab != prev_active_tab) { tab_content_anim = 0.0f; prev_active_tab = active_tab; }
     tab_content_anim = SmoothLerp(tab_content_anim, 1.0f, 14.0f, dt);
-    float off_x = (1.0f - EaseOutCubic(tab_content_anim)) * 26.0f;
+    float off_x = (1.0f - EaseOutCubic(tab_content_anim)) * 30.0f;
+    float content_alpha = EaseOutCubic(tab_content_anim);
 
-    float content_y = wp.y + HDR_H + 8 + wp_offset.y;
-    float pad = 14, col_gap = 14, v_gap = 12;
+    float content_x = wp.x + SIDEBAR_W;
+    float content_y = wp.y + TOPBAR_H;
+    float content_w = ws.x - SIDEBAR_W;
+    float content_h = ws.y - TOPBAR_H;
 
-    // --- Tab 0: Aimbot ---
+    float pad = 18, col_gap = 14, v_gap = 12;
+    float cw = (content_w - pad * 2 - col_gap) / 2;
+
+    // Tab title bar
+    const char* tab_title = NAV[active_tab].label;
+    static const char* tab_subs[] = {
+        "precision aiming and target acquisition",
+        "world rendering and player visualization",
+        "on-screen overlays and indicators",
+        "movement and weapon exploits",
+        "configuration management",
+        "menu preferences and session controls",
+    };
+    dl->AddText(ImVec2(content_x + pad, content_y + 14), C_TEXT_BRIGHT, tab_title);
+    ImVec2 tt_sz = ImGui::CalcTextSize(tab_title);
+    dl->AddText(ImVec2(content_x + pad, content_y + 14 + tt_sz.y + 3), C_TEXT_HINT, tab_subs[active_tab]);
+
+    // Right-side breadcrumb pill
+    {
+        char crumb[64];
+        sprintf_s(crumb, "TAB %d / %d", active_tab + 1, NAV_COUNT);
+        ImVec2 cs = ImGui::CalcTextSize(crumb);
+        float pw = cs.x + 20, ph = 22;
+        ImVec2 cp(content_x + content_w - pad - pw, content_y + 22);
+        DrawPill(dl, cp, pw, ph, C_BG_PILL, C_BORDER);
+        dl->AddText(ImVec2(cp.x + 10, cp.y + (ph - cs.y) * 0.5f), C_TEXT_DIM, crumb);
+    }
+
+    content_y += 60;
+    content_h -= 60;
+
+    // Apply tab transition alpha
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, content_alpha);
+
     if (active_tab == 0) {
-        float cw = (ws.x - pad * 2 - col_gap) / 2;
-        float top = 360, bot = 200;
-        { Card c(dl, ImVec2(wp.x + pad, content_y), cw, top, "aim", dt, off_x);
-          c.Header("aim");
-          c.Chk("enabled", &g_Options.LegitBot.AimBot.Enabled);
+        // AIMBOT
+        float top = 372, bot = 196;
+        { Card c(dl, ImVec2(content_x + pad, content_y), cw, top, "aim", dt, off_x);
+          c.Header("aim assist", &g_Options.LegitBot.AimBot.Enabled, "smart target lock");
           c.KB("keybind", &g_Options.LegitBot.AimBot.KeyBind);
+          c.Section("targeting");
           c.Chk("target npcs", &g_Options.LegitBot.AimBot.TargetNPC);
           c.Chk("visible check", &g_Options.LegitBot.AimBot.VisibleCheck);
-          static bool aim_fov_tog = false;
-          c.ChkTog("show fov", &g_Options.Misc.Screen.ShowAimbotFov, &aim_fov_tog, IM_COL32(240, 240, 240, 255));
           c.Chk("prediction", &g_Options.LegitBot.AimBot.Prediction);
           static bool aim_bone = false;
           c.Chk("use closest bone", &aim_bone);
+          c.Section("display");
+          static bool aim_fov_tog = false;
+          c.ChkTog("show fov", &g_Options.Misc.Screen.ShowAimbotFov, &aim_fov_tog, IM_COL32(240, 240, 240, 255));
           static std::vector<std::string> hb = {"head", "neck", "chest", "pelvis"};
           c.Combo("hitbox", &g_Options.LegitBot.AimBot.HitBox, hb);
           c.Sld("max distance", &g_Options.LegitBot.AimBot.MaxDistance, 0, 1000, "m");
         }
-        { Card c(dl, ImVec2(wp.x + pad + cw + col_gap, content_y), cw, top, "silent", dt, off_x);
-          c.Header("silent");
-          c.Chk("enabled", &g_Options.LegitBot.SilentAim.Enabled);
+        { Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y), cw, top, "silent", dt, off_x);
+          c.Header("silent aim", &g_Options.LegitBot.SilentAim.Enabled, "rage mode");
           c.KB("keybind", &g_Options.LegitBot.SilentAim.KeyBind);
+          c.Section("targeting");
           c.Chk("target npcs", &g_Options.LegitBot.SilentAim.ShotNPC);
           c.Chk("visible check", &g_Options.LegitBot.SilentAim.VisibleCheck);
-          static bool sil_fov_tog = true;
-          c.ChkTog("show fov", &g_Options.Misc.Screen.ShowSilentAimFov, &sil_fov_tog);
-          static bool sil_line = true, sil_line_tog = true;
-          c.ChkTog("aim line", &sil_line, &sil_line_tog);
           c.Chk("magic bullet", &g_Options.LegitBot.SilentAim.MagicBullet);
           static bool sil_bone = false;
           c.Chk("use closest bone", &sil_bone);
+          c.Section("display");
+          static bool sil_fov_tog = true;
+          c.ChkTog("show fov", &g_Options.Misc.Screen.ShowSilentAimFov, &sil_fov_tog);
           static int sil_hb = 0;
           static std::vector<std::string> hb2 = {"head", "neck", "chest", "pelvis"};
           c.Combo("hitbox", &sil_hb, hb2);
           c.Sld("max distance", &g_Options.LegitBot.SilentAim.MaxDistance, 0, 1000, "m");
         }
-        { Card c(dl, ImVec2(wp.x + pad, content_y + top + v_gap), cw, bot, "trigger", dt, off_x);
-          c.Header("trigger");
-          c.Chk("enabled", &g_Options.LegitBot.Trigger.Enabled);
+        { Card c(dl, ImVec2(content_x + pad, content_y + top + v_gap), cw, bot, "trigger", dt, off_x);
+          c.Header("triggerbot", &g_Options.LegitBot.Trigger.Enabled, "auto-fire on target");
           c.KB("keybind", &g_Options.LegitBot.Trigger.KeyBind);
           c.Chk("target npcs", &g_Options.LegitBot.Trigger.ShotNPC);
           c.Chk("visible check", &g_Options.LegitBot.Trigger.VisibleCheck);
           c.Sld("max distance", &g_Options.LegitBot.Trigger.MaxDistance, 0, 1000, "m");
         }
+        { Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y + top + v_gap), cw, bot, "info_aim", dt, off_x);
+          c.Header("performance", nullptr, "live stats");
+          char buf[64];
+          sprintf_s(buf, "%.1f", ImGui::GetIO().Framerate);
+          c.Space(4);
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "framerate");
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 40, c.pos.y + c.y), C_TEXT_BRIGHT, buf);
+          c.y += 22;
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "frame time");
+          sprintf_s(buf, "%.1f ms", 1000.0f / ImGui::GetIO().Framerate);
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 50, c.pos.y + c.y), C_TEXT_BRIGHT, buf);
+          c.y += 22;
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "status");
+          DrawStatusDot(dl, ImVec2(c.pos.x + c.w - c.pad_x - 50, c.pos.y + c.y + 6), C_SUCCESS, (float)ImGui::GetTime());
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 38, c.pos.y + c.y), C_SUCCESS, "online");
+        }
     }
-    // --- Tab 1: Visuals ---
     else if (active_tab == 1) {
-        float cw = (ws.x - pad * 2 - col_gap) / 2;
-        { Card c(dl, ImVec2(wp.x + pad, content_y), cw, 360, "players", dt, off_x);
-          c.Header("players");
-          c.Chk("enabled", &g_Options.Visuals.ESP.Players.Enabled);
+        // VISUALS
+        { Card c(dl, ImVec2(content_x + pad, content_y), cw, 388, "players", dt, off_x);
+          c.Header("players", &g_Options.Visuals.ESP.Players.Enabled, "esp & overlays");
+          c.Section("box & geometry");
           c.Chk("box", &g_Options.Visuals.ESP.Players.Box);
           c.Chk("corner box", &g_Options.Visuals.ESP.Players.CornerBox);
           c.Chk("skeleton", &g_Options.Visuals.ESP.Players.Skeleton);
           c.Chk("head", &g_Options.Visuals.ESP.Players.Head);
+          c.Section("info text");
           c.Chk("name", &g_Options.Visuals.ESP.Players.Name);
           c.Chk("health bar", &g_Options.Visuals.ESP.Players.HealthBar);
           c.Chk("armor bar", &g_Options.Visuals.ESP.Players.ArmorBar);
@@ -759,38 +1181,51 @@ void RenderGui() {
           c.Chk("distance", &g_Options.Visuals.ESP.Players.Distance);
           c.Chk("snap lines", &g_Options.Visuals.ESP.Players.SnapLines);
         }
-        { Card c(dl, ImVec2(wp.x + pad + cw + col_gap, content_y), cw, 200, "vehicles", dt, off_x);
-          c.Header("vehicles");
-          c.Chk("enabled", &g_Options.Visuals.ESP.Vehicles.Enabled);
+        { Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y), cw, 196, "vehicles", dt, off_x);
+          c.Header("vehicles", &g_Options.Visuals.ESP.Vehicles.Enabled);
           c.Chk("ignore occupied", &g_Options.Visuals.ESP.Vehicles.IgnoreOccupiedVehicles);
           c.Chk("name", &g_Options.Visuals.ESP.Vehicles.Name);
           c.Chk("distance", &g_Options.Visuals.ESP.Vehicles.Distance);
           c.Chk("marker", &g_Options.Visuals.ESP.Vehicles.Marker);
         }
-        { Card c(dl, ImVec2(wp.x + pad + cw + col_gap, content_y + 200 + v_gap), cw, 174, "settings_esp", dt, off_x);
-          c.Header("settings");
+        { Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y + 196 + v_gap), cw, 180, "set_esp", dt, off_x);
+          c.Header("filters");
           c.Chk("show local player", &g_Options.Visuals.ESP.Players.ShowLocalPlayer);
           c.Chk("show npcs", &g_Options.Visuals.ESP.Players.ShowNPCs);
           c.Chk("visible only", &g_Options.Visuals.ESP.Players.VisibleOnly);
           c.Sld("render distance", &g_Options.Visuals.ESP.Players.RenderDistance, 0, 1000, "m");
         }
     }
-    // --- Tab 2: Overlays ---
     else if (active_tab == 2) {
-        float cw = (ws.x - pad * 2 - col_gap) / 2;
-        Card c(dl, ImVec2(wp.x + pad, content_y), cw, 200, "screen", dt, off_x);
-        c.Header("screen");
-        c.Chk("watermark", &g_Options.Misc.Screen.EnableWatermark);
-        c.Chk("keybind list", &g_Options.Misc.Screen.EnableKeybindList);
-        c.Chk("aimbot fov", &g_Options.Misc.Screen.ShowAimbotFov);
-        c.Chk("silent fov", &g_Options.Misc.Screen.ShowSilentAimFov);
-        c.Chk("trigger fov", &g_Options.Misc.Screen.ShowTriggerFov);
+        // OVERLAYS
+        { Card c(dl, ImVec2(content_x + pad, content_y), cw, 252, "screen", dt, off_x);
+          c.Header("screen overlays", nullptr, "hud elements");
+          c.Chk("watermark", &g_Options.Misc.Screen.EnableWatermark);
+          c.Chk("keybind list", &g_Options.Misc.Screen.EnableKeybindList);
+          c.Section("fov indicators");
+          c.Chk("aimbot fov", &g_Options.Misc.Screen.ShowAimbotFov);
+          c.Chk("silent fov", &g_Options.Misc.Screen.ShowSilentAimFov);
+          c.Chk("trigger fov", &g_Options.Misc.Screen.ShowTriggerFov);
+        }
+        { Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y), cw, 252, "info_ov", dt, off_x);
+          c.Header("about", nullptr, "info");
+          c.Space(6);
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "build");
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 96, c.pos.y + c.y), C_TEXT_BRIGHT, "1.2.0 (nov 29)");
+          c.y += 22;
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "subscription");
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 60, c.pos.y + c.y), C_SUCCESS, "premium");
+          c.y += 22;
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "renews in");
+          dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 50, c.pos.y + c.y), C_TEXT_BRIGHT, "28 days");
+          c.y += 32;
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_HINT, "thanks for using severance");
+        }
     }
-    // --- Tab 3: Exploits ---
     else if (active_tab == 3) {
-        float cw = (ws.x - pad * 2 - col_gap) / 2;
-        { Card c(dl, ImVec2(wp.x + pad, content_y), cw, 230, "local", dt, off_x);
-          c.Header("local player");
+        // EXPLOITS
+        { Card c(dl, ImVec2(content_x + pad, content_y), cw, 264, "local", dt, off_x);
+          c.Header("local player", nullptr, "self modifications");
           c.Chk("god mode", &g_Options.Exploits.LocalPlayer.God);
           c.Chk("noclip", &g_Options.Exploits.LocalPlayer.Noclip);
           c.Chk("invisible", &g_Options.Exploits.LocalPlayer.Invisible);
@@ -801,8 +1236,8 @@ void RenderGui() {
           c.Sld("player speed", &spd, 1, 10);
           g_Options.Exploits.LocalPlayer.Player_speed = (float)spd;
         }
-        { Card c(dl, ImVec2(wp.x + pad + cw + col_gap, content_y), cw, 220, "weapon", dt, off_x);
-          c.Header("weapon");
+        { Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y), cw, 240, "weapon", dt, off_x);
+          c.Header("weapon", nullptr, "firearm tweaks");
           c.Chk("no reload", &g_Options.Exploits.Weapon.NoReload);
           c.Chk("no recoil", &g_Options.Exploits.Weapon.NoRecoil);
           c.Chk("no spread", &g_Options.Exploits.Weapon.NoSpread);
@@ -811,91 +1246,56 @@ void RenderGui() {
           c.Chk("infinite ammo", &g_Options.Exploits.Weapon.InfiniteAmmo);
         }
     }
-    // --- Tab 4: Lists ---
     else if (active_tab == 4) {
-        dl->AddText(ImVec2(wp.x + pad + 8 + off_x, content_y + 12), C_TEXT_DIM, "lists coming soon...");
+        // CONFIGS placeholder
+        Card c(dl, ImVec2(content_x + pad, content_y), content_w - pad * 2, 240, "cfg", dt, off_x);
+        c.Header("configurations", nullptr, "save & load presets");
+        c.Space(8);
+        dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "preset management coming in v1.3");
+        c.y += 24;
+        dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_HINT,
+                    "you'll be able to save, load, and share configs across sessions");
     }
-    // --- Tab 5: Settings ---
     else if (active_tab == 5) {
-        float cw = (ws.x - pad * 2 - col_gap) / 2;
+        // SETTINGS
         {
-            Card c(dl, ImVec2(wp.x + pad, content_y), cw, 174, "general", dt, off_x);
-            c.Header("general");
+            Card c(dl, ImVec2(content_x + pad, content_y), cw, 192, "general", dt, off_x);
+            c.Header("general", nullptr, "core behavior");
             c.Chk("capture bypass", &g_Options.General.CaptureBypass);
             c.Chk("legit mode", &g_Options.Misc.Other.legit_mode);
             c.Chk("anti screenshot", &g_Options.Misc.Other.anti_screenshot);
-            c.Sld("thread delay", &g_Options.General.ThreadDelay, 0, 32);
+            c.Sld("thread delay", &g_Options.General.ThreadDelay, 0, 32, "ms");
         }
         {
-            Card c(dl, ImVec2(wp.x + pad + cw + col_gap, content_y), cw, 158, "menu", dt, off_x);
-            c.Header("menu");
+            Card c(dl, ImVec2(content_x + pad + cw + col_gap, content_y), cw, 192, "menu", dt, off_x);
+            c.Header("menu", nullptr, "appearance");
             static int menu_scale_pct = 100;
             menu_scale_pct = (int)(menu_scale * 100.0f + 0.5f);
+            int prev_pct = menu_scale_pct;
             c.Sld("scale", &menu_scale_pct, 60, 150, "%");
-            menu_scale = menu_scale_pct / 100.0f;
-            c.Chk("pause game", &pause_game);
-            c.Space(8);
+            if (menu_scale_pct != prev_pct) {
+                menu_scale = menu_scale_pct / 100.0f;
+            }
+            c.Chk("pause game while open", &pause_game);
+            c.Space(4);
+        }
+        {
+            Card c(dl, ImVec2(content_x + pad, content_y + 192 + v_gap), cw * 2 + col_gap, 124, "danger", dt, off_x);
+            c.Header("danger zone", nullptr, "irreversible actions");
+            c.Space(2);
             bool unload_clicked = false;
             c.Btn("UNLOAD CHEAT", &unload_clicked);
-            if (unload_clicked) should_unload = true;
+            if (unload_clicked) {
+                should_unload = true;
+                ShowToast("unloading cheat...", C_WARNING, 2.0f);
+            }
         }
     }
 
-    // --- Tab bar ---
-    float tab_y = wp.y + ws.y - TAB_H + wp_offset.y;
-    dl->AddLine(ImVec2(wp.x + 14, tab_y), ImVec2(wp.x + ws.x - 14, tab_y), C_BORDER_SOFT, 1.0f);
+    ImGui::PopStyleVar();
 
-    const char* tab_names[] = {"aimbot", "visuals", "overlays", "exploits", "lists", "settings"};
-    typedef void (*IconFn)(ImDrawList*, ImVec2, ImU32);
-    IconFn icons[] = {DrawCrosshairIcon, DrawEyeIcon, DrawGlobeIcon, DrawExploitsIcon, DrawListsIcon, DrawSettingsIcon};
-
-    float cx = wp.x + 22;
-    bool found_active = false;
-    float a_l = 0, a_r = 0;
-    for (int i = 0; i < 6; i++) {
-        tab_anim[i] = SmoothLerp(tab_anim[i], (active_tab == i) ? 1.0f : 0.0f, 12.0f, dt);
-        ImU32 col = LerpColor(C_TEXT_DIM, C_ACCENT, tab_anim[i]);
-        float icon_scale = 1.0f + tab_anim[i] * 0.15f;
-
-        ImVec2 icon_pos(cx + 9, tab_y + TAB_H * 0.5f + 1);
-        ImVec2 ic(icon_pos.x + 7, icon_pos.y + 7);
-        dl->PushClipRect(ImVec2(ic.x - 7 * icon_scale - 1, ic.y - 7 * icon_scale - 1),
-                         ImVec2(ic.x + 7 * icon_scale + 1, ic.y + 7 * icon_scale + 1), true);
-        icons[i](dl, icon_pos, col);
-        dl->PopClipRect();
-
-        ImVec2 ts = ImGui::CalcTextSize(tab_names[i]);
-        dl->AddText(ImVec2(cx + 24, tab_y + (TAB_H - ts.y) * 0.5f), col, tab_names[i]);
-        float tw = 24 + ts.x + 24;
-        if (active_tab == i) { a_l = cx; a_r = cx + 24 + ts.x; found_active = true; }
-
-        ImGui::SetCursorScreenPos(ImVec2(cx, tab_y));
-        ImGui::PushID(i);
-        ImGui::InvisibleButton("##tab", ImVec2(tw, TAB_H));
-        if (ImGui::IsItemClicked()) active_tab = i;
-        ImGui::PopID();
-        cx += tw;
-    }
-
-    if (found_active) {
-        if (!tab_indicator_init) {
-            tab_indicator_x = a_l;
-            tab_indicator_width = a_r - a_l;
-            tab_indicator_init = true;
-        } else {
-            tab_indicator_x = SmoothLerp(tab_indicator_x, a_l, 16.0f, dt);
-            tab_indicator_width = SmoothLerp(tab_indicator_width, a_r - a_l, 16.0f, dt);
-        }
-        dl->AddLine(ImVec2(tab_indicator_x, tab_y + TAB_H - 2),
-                    ImVec2(tab_indicator_x + tab_indicator_width, tab_y + TAB_H - 2), C_ACCENT, 2.0f);
-        dl->AddRectFilled(ImVec2(tab_indicator_x, tab_y + TAB_H - 5),
-                          ImVec2(tab_indicator_x + tab_indicator_width, tab_y + TAB_H),
-                          ScaleAlpha(C_ACCENT, 0.15f), 2.0f);
-    }
-
-    const char* brand = "severance";
-    ImVec2 br = ImGui::CalcTextSize(brand);
-    dl->AddText(ImVec2(wp.x + ws.x - br.x - 22, tab_y + (TAB_H - br.y) * 0.5f), C_TEXT_DIM, brand);
+    // --- Toasts (bottom-right, foreground) ---
+    RenderToasts(fg, ImVec2(wp.x + ws.x - 18, wp.y + ws.y - 18), dt);
 
     ImGui::End();
 }
