@@ -13,38 +13,45 @@ namespace render_ui {
 static std::map<std::string, bool> section_open;
 static int active_tab = 0;
 static bool key_listening = false;
-static int temp_key = 0;
+static int* listening_key = nullptr;
 
-static const ImVec4 COLOR_ACCENT = ImVec4(0.86f, 0.18f, 0.18f, 1.0f);
-static const ImVec4 COLOR_BG_DARK = ImVec4(0.08f, 0.08f, 0.08f, 1.0f);
-static const ImVec4 COLOR_BG_MID = ImVec4(0.12f, 0.12f, 0.12f, 1.0f);
-static const ImVec4 COLOR_TEXT = ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
-static const ImVec4 COLOR_TEXT_BRIGHT = ImVec4(0.90f, 0.90f, 0.90f, 1.0f);
+static const ImU32 C_ACCENT      = IM_COL32(220, 45, 45, 255);
+static const ImU32 C_ACCENT_DIM  = IM_COL32(180, 35, 35, 255);
+static const ImU32 C_BG_WIN      = IM_COL32(18, 18, 22, 245);
+static const ImU32 C_BG_CARD     = IM_COL32(22, 22, 26, 235);
+static const ImU32 C_BG_HEADER   = IM_COL32(28, 28, 34, 255);
+static const ImU32 C_BG_INPUT    = IM_COL32(14, 14, 18, 255);
+static const ImU32 C_BORDER      = IM_COL32(45, 45, 52, 255);
+static const ImU32 C_BORDER_SOFT = IM_COL32(35, 35, 42, 255);
+static const ImU32 C_TEXT        = IM_COL32(210, 210, 215, 255);
+static const ImU32 C_TEXT_DIM    = IM_COL32(130, 130, 140, 255);
+static const ImU32 C_TEXT_BRIGHT = IM_COL32(240, 240, 245, 255);
+static const ImU32 C_WHITE       = IM_COL32(245, 245, 245, 255);
 
 static std::string KeyCodeToString(int key) {
-    if (key == 0) return "None";
+    if (key == 0) return "none";
     switch (key) {
-        case VK_LBUTTON: return "LMB";
-        case VK_RBUTTON: return "RMB";
-        case VK_MBUTTON: return "MMB";
-        case VK_XBUTTON1: return "M4";
-        case VK_XBUTTON2: return "M5";
-        case VK_SHIFT: return "Shift";
-        case VK_CONTROL: return "Ctrl";
-        case VK_MENU: return "Alt";
-        case VK_SPACE: return "Space";
-        case VK_RETURN: return "Enter";
-        case VK_ESCAPE: return "Esc";
-        case VK_TAB: return "Tab";
+        case VK_LBUTTON: return "lmb";
+        case VK_RBUTTON: return "rmb";
+        case VK_MBUTTON: return "mmb";
+        case VK_XBUTTON1: return "m4";
+        case VK_XBUTTON2: return "m5";
+        case VK_SHIFT: return "shift";
+        case VK_CONTROL: return "ctrl";
+        case VK_MENU: return "alt";
+        case VK_SPACE: return "space";
+        case VK_RETURN: return "enter";
+        case VK_ESCAPE: return "esc";
+        case VK_TAB: return "tab";
         default:
             if (key >= 'A' && key <= 'Z') {
                 static char buf[2] = {0, 0};
-                buf[0] = (char)key;
+                buf[0] = (char)(key + 32);
                 return std::string(buf);
             }
             if (key >= VK_F1 && key <= VK_F12) {
                 static char buf[4];
-                sprintf_s(buf, sizeof(buf), "F%d", key - VK_F1 + 1);
+                sprintf_s(buf, sizeof(buf), "f%d", key - VK_F1 + 1);
                 return std::string(buf);
             }
             if (key >= '0' && key <= '9') {
@@ -52,432 +59,477 @@ static std::string KeyCodeToString(int key) {
                 buf[0] = (char)key;
                 return std::string(buf);
             }
-            return "Key";
+            return "key";
     }
 }
 
 void ApplyDarkTheme() {
-    ImGuiStyle& style = ImGui::GetStyle();
-    ImVec4* colors = style.Colors;
-
-    style.WindowRounding = 0.0f;
-    style.FrameRounding = 0.0f;
-    style.GrabRounding = 0.0f;
-    style.PopupRounding = 0.0f;
-    style.WindowPadding = ImVec2(0, 0);
-    style.FramePadding = ImVec2(4, 3);
-
-    colors[ImGuiCol_WindowBg] = ImVec4(0.09f, 0.09f, 0.09f, 0.95f);
-    colors[ImGuiCol_ChildBg] = ImVec4(0.09f, 0.09f, 0.09f, 1.0f);
-    colors[ImGuiCol_PopupBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.95f);
-    colors[ImGuiCol_Border] = ImVec4(0.2f, 0.2f, 0.2f, 0.5f);
-    colors[ImGuiCol_FrameBg] = ImVec4(0.15f, 0.15f, 0.15f, 1.0f);
-    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-    colors[ImGuiCol_FrameBgActive] = ImVec4(0.25f, 0.25f, 0.25f, 1.0f);
-    colors[ImGuiCol_TitleBg] = ImVec4(0.08f, 0.08f, 0.08f, 1.0f);
-    colors[ImGuiCol_TitleBgActive] = ImVec4(0.12f, 0.12f, 0.12f, 1.0f);
+    ImGuiStyle& s = ImGui::GetStyle();
+    s.WindowRounding = 8.0f;
+    s.FrameRounding = 4.0f;
+    s.GrabRounding = 4.0f;
+    s.PopupRounding = 4.0f;
+    s.ChildRounding = 6.0f;
+    s.WindowPadding = ImVec2(0, 0);
+    s.FramePadding = ImVec2(4, 3);
+    s.Colors[ImGuiCol_WindowBg] = ImVec4(0.07f, 0.07f, 0.085f, 0.96f);
+    s.Colors[ImGuiCol_ChildBg] = ImVec4(0, 0, 0, 0);
+    s.Colors[ImGuiCol_Border] = ImVec4(0.18f, 0.18f, 0.21f, 1.0f);
 }
 
-struct Col {
-    ImDrawList* draw;
-    ImVec2 base;
-    float w;
+static void DrawKeyboardIcon(ImDrawList* dl, ImVec2 pos, ImU32 col) {
+    float w = 18.0f, h = 12.0f;
+    dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), col, 2.0f, 0, 1.0f);
+    for (int row = 0; row < 2; row++) {
+        for (int c = 0; c < 4; c++) {
+            float x = pos.x + 2.5f + c * 3.7f;
+            float y = pos.y + 2.5f + row * 3.5f;
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + 2.0f, y + 2.0f), col);
+        }
+    }
+}
+
+static void DrawCrosshairIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddCircle(c, 7.0f, col, 16, 1.5f);
+    dl->AddLine(ImVec2(c.x - 10, c.y), ImVec2(c.x - 3, c.y), col, 1.5f);
+    dl->AddLine(ImVec2(c.x + 3, c.y), ImVec2(c.x + 10, c.y), col, 1.5f);
+    dl->AddLine(ImVec2(c.x, c.y - 10), ImVec2(c.x, c.y - 3), col, 1.5f);
+    dl->AddLine(ImVec2(c.x, c.y + 3), ImVec2(c.x, c.y + 10), col, 1.5f);
+}
+
+static void DrawEyeIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddBezierCubic(ImVec2(c.x - 10, c.y), ImVec2(c.x - 5, c.y - 6), ImVec2(c.x + 5, c.y - 6), ImVec2(c.x + 10, c.y), col, 1.5f);
+    dl->AddBezierCubic(ImVec2(c.x - 10, c.y), ImVec2(c.x - 5, c.y + 6), ImVec2(c.x + 5, c.y + 6), ImVec2(c.x + 10, c.y), col, 1.5f);
+    dl->AddCircle(c, 3.0f, col, 12, 1.2f);
+}
+
+static void DrawGlobeIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddCircle(c, 9.0f, col, 24, 1.5f);
+    dl->AddLine(ImVec2(c.x - 9, c.y), ImVec2(c.x + 9, c.y), col, 1.2f);
+    dl->AddBezierCubic(ImVec2(c.x, c.y - 9), ImVec2(c.x - 5, c.y - 3), ImVec2(c.x - 5, c.y + 3), ImVec2(c.x, c.y + 9), col, 1.2f);
+    dl->AddBezierCubic(ImVec2(c.x, c.y - 9), ImVec2(c.x + 5, c.y - 3), ImVec2(c.x + 5, c.y + 3), ImVec2(c.x, c.y + 9), col, 1.2f);
+}
+
+static void DrawExploitsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddLine(ImVec2(c.x - 9, c.y - 4), ImVec2(c.x + 7, c.y - 4), col, 1.5f);
+    dl->AddLine(ImVec2(c.x + 7, c.y - 4), ImVec2(c.x + 4, c.y - 7), col, 1.5f);
+    dl->AddLine(ImVec2(c.x + 7, c.y - 4), ImVec2(c.x + 4, c.y - 1), col, 1.5f);
+    dl->AddLine(ImVec2(c.x + 9, c.y + 4), ImVec2(c.x - 7, c.y + 4), col, 1.5f);
+    dl->AddLine(ImVec2(c.x - 7, c.y + 4), ImVec2(c.x - 4, c.y + 1), col, 1.5f);
+    dl->AddLine(ImVec2(c.x - 7, c.y + 4), ImVec2(c.x - 4, c.y + 7), col, 1.5f);
+}
+
+static void DrawListsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    DrawKeyboardIcon(dl, ImVec2(c.x - 9, c.y - 6), col);
+}
+
+static void DrawSettingsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
+    dl->AddCircle(c, 8.0f, col, 20, 1.5f);
+    dl->AddCircle(c, 3.0f, col, 12, 1.2f);
+    for (int i = 0; i < 8; i++) {
+        float a = i * 6.2831f / 8;
+        ImVec2 p1(c.x + cosf(a) * 8.0f, c.y + sinf(a) * 8.0f);
+        ImVec2 p2(c.x + cosf(a) * 10.5f, c.y + sinf(a) * 10.5f);
+        dl->AddLine(p1, p2, col, 1.5f);
+    }
+}
+
+struct Card {
+    ImDrawList* dl;
+    ImVec2 pos;
+    float w, h;
     float y;
+    const char* id;
+    bool open;
 
-    Col(ImDrawList* d, ImVec2 b, float width) : draw(d), base(b), w(width), y(0) {}
+    Card(ImDrawList* d, ImVec2 p, float width, float height, const char* sid)
+        : dl(d), pos(p), w(width), h(height), y(0), id(sid) {
+        if (section_open.find(sid) == section_open.end())
+            section_open[sid] = true;
+        open = section_open[sid];
 
-    void Spacing(float h = 8.0f) {
-        y += h;
+        dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), C_BG_CARD, 6.0f);
+        dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), C_BORDER_SOFT, 6.0f, 0, 1.0f);
+    }
+
+    void Header(const char* label) {
+        float hh = 44.0f;
+        dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + hh), C_BG_HEADER, 6.0f, ImDrawFlags_RoundCornersTop);
+        dl->AddLine(ImVec2(pos.x, pos.y + hh), ImVec2(pos.x + w, pos.y + hh), C_BORDER_SOFT, 1.0f);
+        dl->AddText(ImVec2(pos.x + 18, pos.y + 14), C_TEXT_BRIGHT, label);
+
+        ImVec2 cv(pos.x + w - 22, pos.y + 18);
+        if (open) {
+            dl->AddTriangleFilled(ImVec2(cv.x - 5, cv.y), ImVec2(cv.x + 5, cv.y), ImVec2(cv.x, cv.y + 5), C_TEXT_DIM);
+        } else {
+            dl->AddTriangleFilled(ImVec2(cv.x, cv.y - 5), ImVec2(cv.x + 5, cv.y), ImVec2(cv.x, cv.y + 5), C_TEXT_DIM);
+        }
+
+        ImGui::SetCursorScreenPos(pos);
+        ImGui::InvisibleButton((std::string("##hdr_") + id).c_str(), ImVec2(w, hh));
+        if (ImGui::IsItemClicked()) {
+            section_open[id] = !section_open[id];
+            open = section_open[id];
+        }
+        y = hh + 14;
     }
 
     bool Chk(const char* label, bool* v) {
-        ImVec2 pos = ImVec2(base.x, base.y + y);
-        float sz = 16.0f;
-
-        ImU32 bg_col = ImGui::GetColorU32(ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-        ImU32 border_col = ImGui::GetColorU32(ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-        ImU32 check_col = ImGui::GetColorU32(COLOR_ACCENT);
-
-        draw->AddRect(pos, ImVec2(pos.x + sz, pos.y + sz), border_col, 2.0f, 0, 1.0f);
-        draw->AddRectFilled(pos, ImVec2(pos.x + sz, pos.y + sz), bg_col, 2.0f);
-
+        if (!open) return false;
+        float sz = 14.0f;
+        ImVec2 cp(pos.x + 18, pos.y + y);
+        dl->AddRect(cp, ImVec2(cp.x + sz, cp.y + sz), *v ? C_ACCENT : C_BORDER, 3.0f, 0, 1.0f);
         if (*v) {
-            draw->AddLine(ImVec2(pos.x + 3, pos.y + 8), ImVec2(pos.x + 6, pos.y + 11), check_col, 2.0f);
-            draw->AddLine(ImVec2(pos.x + 6, pos.y + 11), ImVec2(pos.x + 13, pos.y + 4), check_col, 2.0f);
+            dl->AddRectFilled(ImVec2(cp.x + 2, cp.y + 2), ImVec2(cp.x + sz - 2, cp.y + sz - 2), C_ACCENT, 2.0f);
+            dl->AddLine(ImVec2(cp.x + 3, cp.y + 7), ImVec2(cp.x + 6, cp.y + 10), C_WHITE, 1.6f);
+            dl->AddLine(ImVec2(cp.x + 6, cp.y + 10), ImVec2(cp.x + 11, cp.y + 4), C_WHITE, 1.6f);
         }
+        dl->AddText(ImVec2(cp.x + sz + 10, cp.y - 1), C_TEXT, label);
 
-        draw->AddText(ImVec2(pos.x + sz + 8, pos.y + 2), ImGui::GetColorU32(COLOR_TEXT_BRIGHT), label);
-
-        ImGui::SetCursorScreenPos(pos);
-        ImGui::InvisibleButton(("##chk_" + std::string(label)).c_str(), ImVec2(w, sz + 4));
+        ImGui::SetCursorScreenPos(ImVec2(pos.x + 14, pos.y + y - 4));
+        ImGui::InvisibleButton((std::string("##chk_") + id + label).c_str(), ImVec2(w - 28, 24));
         if (ImGui::IsItemClicked()) *v = !*v;
-
-        y += 24.0f;
+        y += 32;
         return true;
     }
 
-    bool Tog(const char* label, bool* v) {
-        ImVec2 pos = ImVec2(base.x + w - 50, base.y + y + 2);
-        float tog_w = 48.0f, tog_h = 20.0f;
+    bool ChkTog(const char* label, bool* v, bool* tog, ImU32 tog_color = 0) {
+        if (!open) return false;
+        float sz = 14.0f;
+        ImVec2 cp(pos.x + 18, pos.y + y);
+        dl->AddRect(cp, ImVec2(cp.x + sz, cp.y + sz), *v ? C_ACCENT : C_BORDER, 3.0f, 0, 1.0f);
+        if (*v) {
+            dl->AddRectFilled(ImVec2(cp.x + 2, cp.y + 2), ImVec2(cp.x + sz - 2, cp.y + sz - 2), C_ACCENT, 2.0f);
+            dl->AddLine(ImVec2(cp.x + 3, cp.y + 7), ImVec2(cp.x + 6, cp.y + 10), C_WHITE, 1.6f);
+            dl->AddLine(ImVec2(cp.x + 6, cp.y + 10), ImVec2(cp.x + 11, cp.y + 4), C_WHITE, 1.6f);
+        }
+        dl->AddText(ImVec2(cp.x + sz + 10, cp.y - 1), C_TEXT, label);
 
-        ImU32 track_col = *v ? ImGui::GetColorU32(COLOR_ACCENT) : ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
-        ImU32 knob_col = ImGui::GetColorU32(ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
-
-        draw->AddRectFilled(pos, ImVec2(pos.x + tog_w, pos.y + tog_h), track_col, tog_h / 2);
-
-        float knob_x = *v ? pos.x + tog_w - tog_h - 2 : pos.x + 2;
-        draw->AddCircleFilled(ImVec2(knob_x + tog_h / 2 - 1, pos.y + tog_h / 2), tog_h / 2 - 2, knob_col);
-
-        draw->AddText(ImVec2(base.x, base.y + y + 2), ImGui::GetColorU32(COLOR_TEXT_BRIGHT), label);
-
-        ImGui::SetCursorScreenPos(pos);
-        ImGui::InvisibleButton(("##tog_" + std::string(label)).c_str(), ImVec2(tog_w, tog_h));
+        ImGui::SetCursorScreenPos(ImVec2(pos.x + 14, pos.y + y - 4));
+        ImGui::InvisibleButton((std::string("##chk_") + id + label).c_str(), ImVec2(w - 100, 24));
         if (ImGui::IsItemClicked()) *v = !*v;
 
-        y += 24.0f;
+        ImVec2 tp(pos.x + w - 42, pos.y + y - 2);
+        float tw = 26, th = 16;
+        ImU32 fillCol = *tog ? (tog_color ? tog_color : C_ACCENT) : C_BG_INPUT;
+        dl->AddRectFilled(tp, ImVec2(tp.x + tw, tp.y + th), fillCol, 3.0f);
+        dl->AddRect(tp, ImVec2(tp.x + tw, tp.y + th), C_BORDER, 3.0f, 0, 1.0f);
+        ImGui::SetCursorScreenPos(tp);
+        ImGui::InvisibleButton((std::string("##tog_") + id + label).c_str(), ImVec2(tw, th));
+        if (ImGui::IsItemClicked()) *tog = !*tog;
+        y += 32;
         return true;
     }
 
-    bool KB(const char* label, int* key) {
-        ImVec2 label_pos = ImVec2(base.x, base.y + y + 4);
-        ImVec2 btn_pos = ImVec2(base.x + w - 72, base.y + y);
-        float btn_w = 70.0f, btn_h = 22.0f;
+    void KB(const char* label, int* key) {
+        if (!open) return;
+        ImVec2 lp(pos.x + 18, pos.y + y + 4);
+        dl->AddText(lp, C_TEXT, label);
 
-        draw->AddText(label_pos, ImGui::GetColorU32(COLOR_TEXT_BRIGHT), label);
+        float bw = 88, bh = 26;
+        ImVec2 bp(pos.x + w - bw - 18, pos.y + y);
+        dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + bh), C_BG_INPUT, 4.0f);
+        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), C_BORDER, 4.0f, 0, 1.0f);
 
-        ImU32 btn_bg = ImGui::GetColorU32(COLOR_ACCENT);
-        ImU32 btn_border = ImGui::GetColorU32(ImVec4(0.95f, 0.3f, 0.3f, 1.0f));
+        DrawKeyboardIcon(dl, ImVec2(bp.x + 8, bp.y + 7), C_ACCENT);
 
-        draw->AddRectFilled(btn_pos, ImVec2(btn_pos.x + btn_w, btn_pos.y + btn_h), btn_bg, 2.0f);
-        draw->AddRect(btn_pos, ImVec2(btn_pos.x + btn_w, btn_pos.y + btn_h), btn_border, 2.0f, 0, 1.0f);
+        std::string s = (key_listening && listening_key == key) ? "..." : KeyCodeToString(*key);
+        ImVec2 ts = ImGui::CalcTextSize(s.c_str());
+        dl->AddText(ImVec2(bp.x + 34, bp.y + (bh - ts.y) / 2), C_TEXT, s.c_str());
 
-        std::string key_str = KeyCodeToString(*key);
-        ImVec2 text_size = ImGui::CalcTextSize(key_str.c_str());
-        ImVec2 text_pos = ImVec2(btn_pos.x + (btn_w - text_size.x) / 2, btn_pos.y + (btn_h - text_size.y) / 2 - 1);
-        draw->AddText(text_pos, ImGui::GetColorU32(ImVec4(0.95f, 0.95f, 0.95f, 1.0f)), key_str.c_str());
-
-        ImGui::SetCursorScreenPos(btn_pos);
-        ImGui::InvisibleButton(("##kb_" + std::string(label)).c_str(), ImVec2(btn_w, btn_h));
+        ImGui::SetCursorScreenPos(bp);
+        ImGui::InvisibleButton((std::string("##kb_") + id + label).c_str(), ImVec2(bw, bh));
         if (ImGui::IsItemClicked()) {
             key_listening = true;
-            temp_key = *key;
+            listening_key = key;
         }
-
-        if (key_listening) {
+        if (key_listening && listening_key == key) {
             for (int i = 1; i < 256; i++) {
                 if (GetAsyncKeyState(i) & 0x8000) {
-                    *key = i;
+                    *key = (i == VK_ESCAPE) ? 0 : i;
                     key_listening = false;
+                    listening_key = nullptr;
                     break;
                 }
             }
         }
-
-        y += 26.0f;
-        return true;
+        y += 36;
     }
 
-    bool Sld(const char* label, int* v, int vmin, int vmax) {
-        ImVec2 label_pos = ImVec2(base.x, base.y + y);
-        ImVec2 slider_pos = ImVec2(base.x, base.y + y + 18);
-        float slider_w = w, slider_h = 12.0f;
+    void Combo(const char* label, int* v, const std::vector<std::string>& items) {
+        if (!open) return;
+        dl->AddText(ImVec2(pos.x + 18, pos.y + y), C_TEXT, label);
+        y += 22;
+        ImVec2 bp(pos.x + 18, pos.y + y);
+        float bw = w - 36, bh = 26;
+        dl->AddRectFilled(bp, ImVec2(bp.x + bw, bp.y + bh), C_BG_INPUT, 4.0f);
+        dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), C_BORDER, 4.0f, 0, 1.0f);
+        if (*v >= 0 && *v < (int)items.size())
+            dl->AddText(ImVec2(bp.x + 10, bp.y + 6), C_TEXT, items[*v].c_str());
 
-        std::string val_str = std::to_string(*v);
-        ImVec2 val_size = ImGui::CalcTextSize(val_str.c_str());
-        draw->AddText(ImVec2(label_pos.x + w - val_size.x, label_pos.y), ImGui::GetColorU32(COLOR_TEXT), val_str.c_str());
-        draw->AddText(label_pos, ImGui::GetColorU32(COLOR_TEXT_BRIGHT), label);
+        ImVec2 av(bp.x + bw - 14, bp.y + 10);
+        dl->AddTriangleFilled(ImVec2(av.x - 4, av.y), ImVec2(av.x + 4, av.y), ImVec2(av.x, av.y + 5), C_TEXT_DIM);
 
-        ImU32 track_bg = ImGui::GetColorU32(ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-        ImU32 track_fill = ImGui::GetColorU32(COLOR_ACCENT);
-        ImU32 knob_col = ImGui::GetColorU32(ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
-
-        draw->AddRectFilled(slider_pos, ImVec2(slider_pos.x + slider_w, slider_pos.y + slider_h), track_bg, 2.0f);
-
-        float ratio = (float)(*v - vmin) / (vmax - vmin);
-        float fill_w = slider_w * ratio;
-        draw->AddRectFilled(slider_pos, ImVec2(slider_pos.x + fill_w, slider_pos.y + slider_h), track_fill, 2.0f);
-
-        float knob_x = slider_pos.x + fill_w - 1;
-        draw->AddCircleFilled(ImVec2(knob_x, slider_pos.y + slider_h / 2), 5.0f, knob_col);
-
-        ImGui::SetCursorScreenPos(slider_pos);
-        ImGui::InvisibleButton(("##sld_" + std::string(label)).c_str(), ImVec2(slider_w, slider_h));
-        if (ImGui::IsItemActive() && ImGui::IsMouseDown(0)) {
-            float mouse_x = ImGui::GetIO().MousePos.x;
-            float new_ratio = (mouse_x - slider_pos.x) / slider_w;
-            new_ratio = ImClamp(new_ratio, 0.0f, 1.0f);
-            *v = (int)(vmin + new_ratio * (vmax - vmin));
-        }
-
-        y += 40.0f;
-        return true;
+        ImGui::SetCursorScreenPos(bp);
+        ImGui::InvisibleButton((std::string("##cmb_") + id + label).c_str(), ImVec2(bw, bh));
+        if (ImGui::IsItemClicked()) *v = (*v + 1) % items.size();
+        y += bh + 12;
     }
 
-    bool Cmb(const char* label, int* v, const std::vector<std::string>& items) {
-        ImVec2 label_pos = ImVec2(base.x, base.y + y);
-        ImVec2 box_pos = ImVec2(base.x, base.y + y + 18);
-        float box_w = w, box_h = 20.0f;
+    void Sld(const char* label, int* v, int vmin, int vmax, const char* suffix = "") {
+        if (!open) return;
+        ImVec2 lp(pos.x + 18, pos.y + y);
+        dl->AddText(lp, C_TEXT, label);
 
-        draw->AddText(label_pos, ImGui::GetColorU32(COLOR_TEXT_BRIGHT), label);
+        char val[32];
+        sprintf_s(val, "%d%s", *v, suffix);
+        ImVec2 vs = ImGui::CalcTextSize(val);
+        dl->AddText(ImVec2(pos.x + w - vs.x - 18, pos.y + y), C_TEXT_DIM, val);
 
-        ImU32 box_bg = ImGui::GetColorU32(ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-        ImU32 box_border = ImGui::GetColorU32(ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+        y += 20;
+        ImVec2 tp(pos.x + 18, pos.y + y);
+        float tw = w - 36, th = 4;
+        dl->AddRectFilled(tp, ImVec2(tp.x + tw, tp.y + th), C_BG_INPUT, 2.0f);
+        float r = (float)(*v - vmin) / (vmax - vmin);
+        if (r < 0) r = 0; if (r > 1) r = 1;
+        dl->AddRectFilled(tp, ImVec2(tp.x + tw * r, tp.y + th), C_ACCENT, 2.0f);
+        dl->AddCircleFilled(ImVec2(tp.x + tw * r, tp.y + th / 2), 6.0f, C_WHITE);
 
-        draw->AddRectFilled(box_pos, ImVec2(box_pos.x + box_w, box_pos.y + box_h), box_bg, 2.0f);
-        draw->AddRect(box_pos, ImVec2(box_pos.x + box_w, box_pos.y + box_h), box_border, 2.0f, 0, 1.0f);
-
-        if (*v >= 0 && *v < (int)items.size()) {
-            draw->AddText(ImVec2(box_pos.x + 6, box_pos.y + 3), ImGui::GetColorU32(COLOR_TEXT), items[*v].c_str());
+        ImGui::SetCursorScreenPos(ImVec2(tp.x, tp.y - 6));
+        ImGui::InvisibleButton((std::string("##sld_") + id + label).c_str(), ImVec2(tw, 18));
+        if (ImGui::IsItemActive()) {
+            float mx = ImGui::GetIO().MousePos.x;
+            float nr = (mx - tp.x) / tw;
+            if (nr < 0) nr = 0; if (nr > 1) nr = 1;
+            *v = (int)(vmin + nr * (vmax - vmin));
         }
-
-        draw->AddText(ImVec2(box_pos.x + box_w - 12, box_pos.y + 2), ImGui::GetColorU32(COLOR_TEXT), "v");
-
-        ImGui::SetCursorScreenPos(box_pos);
-        ImGui::InvisibleButton(("##cmb_" + std::string(label)).c_str(), ImVec2(box_w, box_h));
-        if (ImGui::IsItemClicked()) {
-            *v = (*v + 1) % items.size();
-        }
-
-        y += 42.0f;
-        return true;
+        y += 22;
     }
 };
-
-bool SectionHeader(const char* id, const char* label, ImDrawList* draw, ImVec2 pos, float width, float& y) {
-    if (section_open.find(id) == section_open.end())
-        section_open[id] = true;
-
-    bool& open = section_open[id];
-
-    ImVec2 header_pos = ImVec2(pos.x, pos.y + y);
-    float header_h = 28.0f;
-
-    ImU32 bg_color = ImGui::GetColorU32(ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    draw->AddRectFilled(header_pos, ImVec2(header_pos.x + width, header_pos.y + header_h), bg_color);
-
-    draw->AddText(ImVec2(header_pos.x + 10, header_pos.y + 6), ImGui::GetColorU32(COLOR_TEXT_BRIGHT), label);
-
-    const char* arrow = open ? "▼" : "▶";
-    ImVec2 arrow_size = ImGui::CalcTextSize(arrow);
-    draw->AddText(ImVec2(header_pos.x + width - arrow_size.x - 10, header_pos.y + 6), ImGui::GetColorU32(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)), arrow);
-
-    ImGui::SetCursorScreenPos(header_pos);
-    ImGui::InvisibleButton(("##sec_" + std::string(id)).c_str(), ImVec2(width, header_h));
-    if (ImGui::IsItemClicked())
-        open = !open;
-
-    y += header_h;
-    return open;
-}
 
 void RenderGui() {
     ApplyDarkTheme();
 
-    ImGui::SetNextWindowSize(ImVec2(820, 670), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(100, 100), ImGuiCond_FirstUseEver);
-    ImGui::Begin("TRACELESS", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar);
+    ImGui::SetNextWindowSize(ImVec2(1080, 780), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(80, 60), ImGuiCond_FirstUseEver);
+    ImGui::Begin("##traceless", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 win_pos = ImGui::GetWindowPos();
-    ImVec2 win_size = ImGui::GetWindowSize();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 wp = ImGui::GetWindowPos();
+    ImVec2 ws = ImGui::GetWindowSize();
 
-    float HDR_H = 40.0f;
-    float TAB_H = 48.0f;
-    float content_h = win_size.y - HDR_H - TAB_H - 2;
+    dl->AddRectFilled(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), C_BG_WIN, 8.0f);
+    dl->AddRect(wp, ImVec2(wp.x + ws.x, wp.y + ws.y), C_BORDER, 8.0f, 0, 1.0f);
 
-    ImU32 header_bg = ImGui::GetColorU32(ImVec4(0.09f, 0.09f, 0.09f, 1.0f));
-    draw_list->AddRectFilled(ImVec2(win_pos.x, win_pos.y), ImVec2(win_pos.x + win_size.x, win_pos.y + HDR_H), header_bg);
+    float HDR_H = 44.0f;
+    float TAB_H = 52.0f;
 
-    draw_list->AddText(ImVec2(win_pos.x + 14, win_pos.y + 12), ImGui::GetColorU32(COLOR_ACCENT), "severance");
-    draw_list->AddText(ImVec2(win_pos.x + 14 + ImGui::CalcTextSize("severance").x, win_pos.y + 12), ImGui::GetColorU32(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)), ".today");
+    dl->AddText(ImVec2(wp.x + 22, wp.y + 16), C_ACCENT, "severance");
+    float sw_x = wp.x + 22 + ImGui::CalcTextSize("severance").x;
+    dl->AddText(ImVec2(sw_x, wp.y + 16), C_TEXT_DIM, ".today");
 
-    ImU32 tab_bar_bg = ImGui::GetColorU32(ImVec4(0.09f, 0.09f, 0.09f, 1.0f));
-    draw_list->AddRectFilled(ImVec2(win_pos.x, win_pos.y + win_size.y - TAB_H), ImVec2(win_pos.x + win_size.x, win_pos.y + win_size.y), tab_bar_bg);
+    const char* build_str = "build: nov 29 2025";
+    ImVec2 bs = ImGui::CalcTextSize(build_str);
+    dl->AddText(ImVec2(wp.x + ws.x - bs.x - 22, wp.y + 16), C_TEXT_DIM, build_str);
 
-    const char* tabs[] = {"aimbot", "visuals", "overlays", "exploits", "lists", "settings"};
-    float tab_w = win_size.x / 6;
+    dl->AddLine(ImVec2(wp.x, wp.y + HDR_H), ImVec2(wp.x + ws.x, wp.y + HDR_H), C_BORDER_SOFT, 1.0f);
 
-    for (int i = 0; i < 6; i++) {
-        ImVec2 tab_pos = ImVec2(win_pos.x + i * tab_w, win_pos.y + win_size.y - TAB_H);
-
-        if (active_tab == i) {
-            ImU32 active_col = ImGui::GetColorU32(COLOR_ACCENT);
-            draw_list->AddLine(ImVec2(tab_pos.x, tab_pos.y), ImVec2(tab_pos.x + tab_w, tab_pos.y), active_col, 2.0f);
-            draw_list->AddText(ImVec2(tab_pos.x + tab_w / 2 - ImGui::CalcTextSize(tabs[i]).x / 2, tab_pos.y + 16), ImGui::GetColorU32(COLOR_TEXT_BRIGHT), tabs[i]);
-        } else {
-            draw_list->AddText(ImVec2(tab_pos.x + tab_w / 2 - ImGui::CalcTextSize(tabs[i]).x / 2, tab_pos.y + 16), ImGui::GetColorU32(COLOR_TEXT), tabs[i]);
-        }
-
-        ImGui::SetCursorScreenPos(tab_pos);
-        ImGui::InvisibleButton(("##tab_" + std::string(tabs[i])).c_str(), ImVec2(tab_w, TAB_H));
-        if (ImGui::IsItemClicked())
-            active_tab = i;
-    }
-
-    ImVec2 content_pos = ImVec2(win_pos.x, win_pos.y + HDR_H);
-
-    ImGui::SetCursorScreenPos(content_pos);
-    ImGui::BeginChild("content", ImVec2(win_size.x, content_h), false, ImGuiWindowFlags_NoScrollbar);
+    float content_y = wp.y + HDR_H + 14;
+    float content_h = ws.y - HDR_H - TAB_H - 14;
+    float pad = 14.0f;
+    float col_gap = 14.0f;
 
     if (active_tab == 0) {
-        ImDrawList* content_draw = ImGui::GetWindowDrawList();
-        ImVec2 child_pos = ImGui::GetWindowPos();
-        float child_w = ImGui::GetWindowSize().x;
-        float col_w = (child_w - 4) / 2;
-        float y_offset = 0;
+        float card_w = (ws.x - pad * 2 - col_gap) / 2;
+        float top_card_h = 540;
+        float bot_card_h = 280;
 
-        Col left(content_draw, child_pos, col_w);
-        Col right(content_draw, ImVec2(child_pos.x + col_w + 4, child_pos.y), col_w);
-
-        if (SectionHeader("aimbot_main", "Aimbot", content_draw, child_pos, col_w, y_offset)) {
-            left.y = y_offset;
-            left.Chk("Enable", &g_Options.LegitBot.AimBot.Enabled);
-            left.KB("Keybind", &g_Options.LegitBot.AimBot.KeyBind);
-            left.Chk("Target NPCs", &g_Options.LegitBot.AimBot.TargetNPC);
-            left.Chk("Visible Check", &g_Options.LegitBot.AimBot.VisibleCheck);
-            left.Chk("Prediction", &g_Options.LegitBot.AimBot.Prediction);
-            std::vector<std::string> hitboxes = {"Head", "Neck", "Chest"};
-            left.Cmb("Hitbox", &g_Options.LegitBot.AimBot.HitBox, hitboxes);
-            left.Sld("Max Distance", &g_Options.LegitBot.AimBot.MaxDistance, 0, 1000);
+        {
+            Card c(dl, ImVec2(wp.x + pad, content_y), card_w, top_card_h, "aim");
+            c.Header("aim");
+            if (c.open) {
+                c.Chk("enabled", &g_Options.LegitBot.AimBot.Enabled);
+                c.KB("keybind", &g_Options.LegitBot.AimBot.KeyBind);
+                c.Chk("target npcs", &g_Options.LegitBot.AimBot.TargetNPC);
+                c.Chk("visible check", &g_Options.LegitBot.AimBot.VisibleCheck);
+                static bool aim_fov_tog = false;
+                c.ChkTog("show fov", &g_Options.Misc.Screen.ShowAimbotFov, &aim_fov_tog, IM_COL32(245, 245, 245, 255));
+                c.Chk("prediction", &g_Options.LegitBot.AimBot.Prediction);
+                static bool aim_bone = false;
+                c.Chk("use closest bone", &aim_bone);
+                std::vector<std::string> hb = {"head", "neck", "chest", "pelvis"};
+                c.Combo("hitbox", &g_Options.LegitBot.AimBot.HitBox, hb);
+                c.Sld("max distance", &g_Options.LegitBot.AimBot.MaxDistance, 0, 1000, "m");
+            }
         }
-        y_offset = left.y + 8;
 
-        if (SectionHeader("trigger_main", "Trigger Bot", content_draw, child_pos, col_w, y_offset)) {
-            left.y = y_offset;
-            left.Chk("Enable", &g_Options.LegitBot.Trigger.Enabled);
-            left.KB("Keybind", &g_Options.LegitBot.Trigger.KeyBind);
-            left.Chk("Target NPCs", &g_Options.LegitBot.Trigger.ShotNPC);
-            left.Chk("Visible Check", &g_Options.LegitBot.Trigger.VisibleCheck);
-            left.Sld("Max Distance", &g_Options.LegitBot.Trigger.MaxDistance, 0, 1000);
+        {
+            Card c(dl, ImVec2(wp.x + pad + card_w + col_gap, content_y), card_w, top_card_h, "silent");
+            c.Header("silent");
+            if (c.open) {
+                c.Chk("enabled", &g_Options.LegitBot.SilentAim.Enabled);
+                c.KB("keybind", &g_Options.LegitBot.SilentAim.KeyBind);
+                c.Chk("target npcs", &g_Options.LegitBot.SilentAim.ShotNPC);
+                c.Chk("visible check", &g_Options.LegitBot.SilentAim.VisibleCheck);
+                static bool sil_fov_tog = true;
+                c.ChkTog("show fov", &g_Options.Misc.Screen.ShowSilentAimFov, &sil_fov_tog);
+                static bool sil_line = true;
+                static bool sil_line_tog = true;
+                c.ChkTog("aim line", &sil_line, &sil_line_tog);
+                c.Chk("magic bullet", &g_Options.LegitBot.SilentAim.MagicBullet);
+                static bool sil_bone = false;
+                c.Chk("use closest bone", &sil_bone);
+                static int sil_hb = 0;
+                std::vector<std::string> hb = {"head", "neck", "chest", "pelvis"};
+                c.Combo("hitbox", &sil_hb, hb);
+                c.Sld("max distance", &g_Options.LegitBot.SilentAim.MaxDistance, 0, 1000, "m");
+            }
         }
-        y_offset = left.y + 8;
 
-        float right_y = 0;
-        if (SectionHeader("silent_main", "Silent Aim", content_draw, ImVec2(child_pos.x + col_w + 4, child_pos.y), col_w, right_y)) {
-            right.y = right_y;
-            right.Chk("Enable", &g_Options.LegitBot.SilentAim.Enabled);
-            right.KB("Keybind", &g_Options.LegitBot.SilentAim.KeyBind);
-            right.Chk("Target NPCs", &g_Options.LegitBot.SilentAim.ShotNPC);
-            right.Chk("Visible Check", &g_Options.LegitBot.SilentAim.VisibleCheck);
-            right.Chk("Magic Bullet", &g_Options.LegitBot.SilentAim.MagicBullet);
-            right.Chk("Prediction", &g_Options.LegitBot.SilentAim.Prediction);
-            right.Chk("Auto Shoot", &g_Options.LegitBot.SilentAim.AutoShoot);
-            right.Chk("Alive Only", &g_Options.LegitBot.SilentAim.AliveOnly);
-            right.Chk("Force Driver", &g_Options.LegitBot.SilentAim.ForceDriver);
-            right.Sld("Max Distance", &g_Options.LegitBot.SilentAim.MaxDistance, 0, 1000);
+        {
+            Card c(dl, ImVec2(wp.x + pad, content_y + top_card_h + col_gap), card_w, bot_card_h, "trigger");
+            c.Header("trigger");
+            if (c.open) {
+                c.Chk("enabled", &g_Options.LegitBot.Trigger.Enabled);
+                c.KB("keybind", &g_Options.LegitBot.Trigger.KeyBind);
+                c.Chk("target npcs", &g_Options.LegitBot.Trigger.ShotNPC);
+                c.Chk("visible check", &g_Options.LegitBot.Trigger.VisibleCheck);
+                c.Sld("max distance", &g_Options.LegitBot.Trigger.MaxDistance, 0, 1000, "m");
+            }
         }
     }
     else if (active_tab == 1) {
-        ImDrawList* content_draw = ImGui::GetWindowDrawList();
-        ImVec2 child_pos = ImGui::GetWindowPos();
-        float child_w = ImGui::GetWindowSize().x;
-        float y_offset = 0;
-
-        Col col(content_draw, child_pos, child_w);
-
-        if (SectionHeader("esp_players", "Player ESP", content_draw, child_pos, child_w, y_offset)) {
-            col.y = y_offset;
-            col.Chk("Enable", &g_Options.Visuals.ESP.Players.Enabled);
-            col.Chk("Box", &g_Options.Visuals.ESP.Players.Box);
-            col.Chk("Corner Boxes", &g_Options.Visuals.ESP.Players.CornerBox);
-            col.Chk("Skeleton", &g_Options.Visuals.ESP.Players.Skeleton);
-            col.Chk("Head Circle", &g_Options.Visuals.ESP.Players.Head);
-            col.Chk("Names", &g_Options.Visuals.ESP.Players.Name);
-            col.Chk("Health Bar", &g_Options.Visuals.ESP.Players.HealthBar);
-            col.Chk("Armor Bar", &g_Options.Visuals.ESP.Players.ArmorBar);
-            col.Chk("Weapon Names", &g_Options.Visuals.ESP.Players.WeaponName);
-            col.Chk("Distance", &g_Options.Visuals.ESP.Players.Distance);
-            col.Chk("Snaplines", &g_Options.Visuals.ESP.Players.SnapLines);
+        float card_w = (ws.x - pad * 2 - col_gap) / 2;
+        {
+            Card c(dl, ImVec2(wp.x + pad, content_y), card_w, 500, "players");
+            c.Header("players");
+            if (c.open) {
+                c.Chk("enabled", &g_Options.Visuals.ESP.Players.Enabled);
+                c.Chk("box", &g_Options.Visuals.ESP.Players.Box);
+                c.Chk("corner box", &g_Options.Visuals.ESP.Players.CornerBox);
+                c.Chk("skeleton", &g_Options.Visuals.ESP.Players.Skeleton);
+                c.Chk("head", &g_Options.Visuals.ESP.Players.Head);
+                c.Chk("name", &g_Options.Visuals.ESP.Players.Name);
+                c.Chk("health bar", &g_Options.Visuals.ESP.Players.HealthBar);
+                c.Chk("armor bar", &g_Options.Visuals.ESP.Players.ArmorBar);
+                c.Chk("weapon name", &g_Options.Visuals.ESP.Players.WeaponName);
+                c.Chk("distance", &g_Options.Visuals.ESP.Players.Distance);
+                c.Chk("snap lines", &g_Options.Visuals.ESP.Players.SnapLines);
+            }
         }
-        y_offset = col.y + 8;
-
-        if (SectionHeader("esp_vehicles", "Vehicle ESP", content_draw, child_pos, child_w, y_offset)) {
-            col.y = y_offset;
-            col.Chk("Enable", &g_Options.Visuals.ESP.Vehicles.Enabled);
-            col.Chk("Ignore Occupied", &g_Options.Visuals.ESP.Vehicles.IgnoreOccupiedVehicles);
-            col.Chk("Names", &g_Options.Visuals.ESP.Vehicles.Name);
-            col.Chk("Distance", &g_Options.Visuals.ESP.Vehicles.Distance);
-            col.Chk("Marker", &g_Options.Visuals.ESP.Vehicles.Marker);
+        {
+            Card c(dl, ImVec2(wp.x + pad + card_w + col_gap, content_y), card_w, 320, "vehicles");
+            c.Header("vehicles");
+            if (c.open) {
+                c.Chk("enabled", &g_Options.Visuals.ESP.Vehicles.Enabled);
+                c.Chk("ignore occupied", &g_Options.Visuals.ESP.Vehicles.IgnoreOccupiedVehicles);
+                c.Chk("name", &g_Options.Visuals.ESP.Vehicles.Name);
+                c.Chk("distance", &g_Options.Visuals.ESP.Vehicles.Distance);
+                c.Chk("marker", &g_Options.Visuals.ESP.Vehicles.Marker);
+            }
         }
-        y_offset = col.y + 8;
-
-        if (SectionHeader("esp_settings", "ESP Settings", content_draw, child_pos, child_w, y_offset)) {
-            col.y = y_offset;
-            col.Chk("Show Local Player", &g_Options.Visuals.ESP.Players.ShowLocalPlayer);
-            col.Chk("Show NPCs", &g_Options.Visuals.ESP.Players.ShowNPCs);
-            col.Chk("Visible Only", &g_Options.Visuals.ESP.Players.VisibleOnly);
-            col.Sld("Render Distance", &g_Options.Visuals.ESP.Players.RenderDistance, 0, 1000);
+        {
+            Card c(dl, ImVec2(wp.x + pad + card_w + col_gap, content_y + 320 + col_gap), card_w, 170, "settings_esp");
+            c.Header("settings");
+            if (c.open) {
+                c.Chk("show local player", &g_Options.Visuals.ESP.Players.ShowLocalPlayer);
+                c.Chk("show npcs", &g_Options.Visuals.ESP.Players.ShowNPCs);
+                c.Chk("visible only", &g_Options.Visuals.ESP.Players.VisibleOnly);
+                c.Sld("render distance", &g_Options.Visuals.ESP.Players.RenderDistance, 0, 1000, "m");
+            }
         }
     }
     else if (active_tab == 2) {
-        ImDrawList* content_draw = ImGui::GetWindowDrawList();
-        ImVec2 child_pos = ImGui::GetWindowPos();
-        float child_w = ImGui::GetWindowSize().x;
-        float y_offset = 0;
-
-        Col col(content_draw, child_pos, child_w);
-
-        if (SectionHeader("overlays_screen", "Screen", content_draw, child_pos, child_w, y_offset)) {
-            col.y = y_offset;
-            col.Chk("Watermark", &g_Options.Misc.Screen.EnableWatermark);
-            col.Chk("Keybind List", &g_Options.Misc.Screen.EnableKeybindList);
-            col.Chk("Aimbot FOV", &g_Options.Misc.Screen.ShowAimbotFov);
-            col.Chk("Silent FOV", &g_Options.Misc.Screen.ShowSilentAimFov);
-            col.Chk("Trigger FOV", &g_Options.Misc.Screen.ShowTriggerFov);
+        float card_w = (ws.x - pad * 2 - col_gap) / 2;
+        Card c(dl, ImVec2(wp.x + pad, content_y), card_w, 260, "screen");
+        c.Header("screen");
+        if (c.open) {
+            c.Chk("watermark", &g_Options.Misc.Screen.EnableWatermark);
+            c.Chk("keybind list", &g_Options.Misc.Screen.EnableKeybindList);
+            c.Chk("aimbot fov", &g_Options.Misc.Screen.ShowAimbotFov);
+            c.Chk("silent fov", &g_Options.Misc.Screen.ShowSilentAimFov);
+            c.Chk("trigger fov", &g_Options.Misc.Screen.ShowTriggerFov);
         }
     }
     else if (active_tab == 3) {
-        ImDrawList* content_draw = ImGui::GetWindowDrawList();
-        ImVec2 child_pos = ImGui::GetWindowPos();
-        float child_w = ImGui::GetWindowSize().x;
-        float y_offset = 0;
-
-        Col col(content_draw, child_pos, child_w);
-
-        if (SectionHeader("exploits_local", "Local Player", content_draw, child_pos, child_w, y_offset)) {
-            col.y = y_offset;
-            col.Chk("God Mode", &g_Options.Exploits.LocalPlayer.God);
-            col.Chk("Noclip", &g_Options.Exploits.LocalPlayer.Noclip);
-            col.Chk("Invisible", &g_Options.Exploits.LocalPlayer.Invisible);
-            col.Chk("Shrink", &g_Options.Exploits.LocalPlayer.Shrink);
-            col.Chk("Speed Hack", &g_Options.Exploits.LocalPlayer.speed);
-            col.Sld("Player Speed", &g_Options.Exploits.LocalPlayer.Player_speed, 1, 10);
+        float card_w = (ws.x - pad * 2 - col_gap) / 2;
+        {
+            Card c(dl, ImVec2(wp.x + pad, content_y), card_w, 320, "local");
+            c.Header("local player");
+            if (c.open) {
+                c.Chk("god mode", &g_Options.Exploits.LocalPlayer.God);
+                c.Chk("noclip", &g_Options.Exploits.LocalPlayer.Noclip);
+                c.Chk("invisible", &g_Options.Exploits.LocalPlayer.Invisible);
+                c.Chk("shrink", &g_Options.Exploits.LocalPlayer.Shrink);
+                c.Chk("speed hack", &g_Options.Exploits.LocalPlayer.speed);
+                static int spd = 5;
+                c.Sld("player speed", &spd, 1, 10);
+                g_Options.Exploits.LocalPlayer.Player_speed = (float)spd;
+            }
         }
-        y_offset = col.y + 8;
-
-        if (SectionHeader("exploits_weapon", "Weapon", content_draw, child_pos, child_w, y_offset)) {
-            col.y = y_offset;
-            col.Chk("No Reload", &g_Options.Exploits.Weapon.NoReload);
-            col.Chk("No Recoil", &g_Options.Exploits.Weapon.NoRecoil);
-            col.Chk("No Spread", &g_Options.Exploits.Weapon.NoSpread);
-            col.Chk("Rapid Fire", &g_Options.Exploits.Weapon.RapidFire);
-            col.Chk("One Shot Kill", &g_Options.Exploits.Weapon.OneShotKill);
-            col.Chk("Infinite Ammo", &g_Options.Exploits.Weapon.InfiniteAmmo);
+        {
+            Card c(dl, ImVec2(wp.x + pad + card_w + col_gap, content_y), card_w, 320, "weapon");
+            c.Header("weapon");
+            if (c.open) {
+                c.Chk("no reload", &g_Options.Exploits.Weapon.NoReload);
+                c.Chk("no recoil", &g_Options.Exploits.Weapon.NoRecoil);
+                c.Chk("no spread", &g_Options.Exploits.Weapon.NoSpread);
+                c.Chk("rapid fire", &g_Options.Exploits.Weapon.RapidFire);
+                c.Chk("one shot kill", &g_Options.Exploits.Weapon.OneShotKill);
+                c.Chk("infinite ammo", &g_Options.Exploits.Weapon.InfiniteAmmo);
+            }
         }
     }
     else if (active_tab == 4) {
-        ImDrawList* content_draw = ImGui::GetWindowDrawList();
-        ImVec2 child_pos = ImGui::GetWindowPos();
-        draw_list->AddText(ImVec2(child_pos.x + 10, child_pos.y + 10), ImGui::GetColorU32(COLOR_TEXT), "Lists coming soon...");
+        dl->AddText(ImVec2(wp.x + pad + 8, content_y + 12), C_TEXT_DIM, "lists coming soon...");
     }
     else if (active_tab == 5) {
-        ImDrawList* content_draw = ImGui::GetWindowDrawList();
-        ImVec2 child_pos = ImGui::GetWindowPos();
-        float child_w = ImGui::GetWindowSize().x;
-        float y_offset = 0;
-
-        Col col(content_draw, child_pos, child_w);
-
-        if (SectionHeader("settings_general", "General", content_draw, child_pos, child_w, y_offset)) {
-            col.y = y_offset;
-            col.Chk("Capture Bypass", &g_Options.General.CaptureBypass);
-            col.Chk("Legit Mode", &g_Options.Misc.Other.legit_mode);
-            col.Chk("Anti Screenshot", &g_Options.Misc.Other.anti_screenshot);
-            col.Sld("Thread Delay", &g_Options.General.ThreadDelay, 0, 32);
+        float card_w = (ws.x - pad * 2 - col_gap) / 2;
+        {
+            Card c(dl, ImVec2(wp.x + pad, content_y), card_w, 240, "general");
+            c.Header("general");
+            if (c.open) {
+                c.Chk("capture bypass", &g_Options.General.CaptureBypass);
+                c.Chk("legit mode", &g_Options.Misc.Other.legit_mode);
+                c.Chk("anti screenshot", &g_Options.Misc.Other.anti_screenshot);
+                c.Sld("thread delay", &g_Options.General.ThreadDelay, 0, 32);
+            }
         }
     }
 
-    ImGui::EndChild();
+    float tab_y = wp.y + ws.y - TAB_H;
+    dl->AddLine(ImVec2(wp.x, tab_y), ImVec2(wp.x + ws.x, tab_y), C_BORDER_SOFT, 1.0f);
+
+    const char* tab_names[] = {"aimbot", "visuals", "overlays", "exploits", "lists", "settings"};
+    typedef void (*IconFn)(ImDrawList*, ImVec2, ImU32);
+    IconFn icons[] = {DrawCrosshairIcon, DrawEyeIcon, DrawGlobeIcon, DrawExploitsIcon, DrawListsIcon, DrawSettingsIcon};
+
+    float cursor_x = wp.x + 22;
+    for (int i = 0; i < 6; i++) {
+        ImU32 col = (active_tab == i) ? C_ACCENT : C_TEXT_DIM;
+        ImVec2 ic_pos(cursor_x + 12, tab_y + TAB_H / 2);
+        icons[i](dl, ic_pos, col);
+        ImVec2 ts = ImGui::CalcTextSize(tab_names[i]);
+        dl->AddText(ImVec2(cursor_x + 28, tab_y + (TAB_H - ts.y) / 2), col, tab_names[i]);
+
+        float tw = 28 + ts.x + 32;
+        if (active_tab == i) {
+            dl->AddLine(ImVec2(cursor_x, tab_y + TAB_H - 2), ImVec2(cursor_x + tw - 16, tab_y + TAB_H - 2), C_ACCENT, 2.0f);
+        }
+
+        ImGui::SetCursorScreenPos(ImVec2(cursor_x, tab_y));
+        ImGui::InvisibleButton((std::string("##tab_") + tab_names[i]).c_str(), ImVec2(tw, TAB_H));
+        if (ImGui::IsItemClicked()) active_tab = i;
+
+        cursor_x += tw;
+    }
+
+    const char* brand = "severance";
+    ImVec2 br = ImGui::CalcTextSize(brand);
+    dl->AddText(ImVec2(wp.x + ws.x - br.x - 22, tab_y + (TAB_H - br.y) / 2), C_TEXT_DIM, brand);
+
     ImGui::End();
 }
 
