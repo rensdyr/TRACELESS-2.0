@@ -30,9 +30,16 @@ static float tab_indicator_x = 0.0f;
 static float tab_indicator_width = 0.0f;
 static bool  tab_indicator_init = false;
 static float gui_fade_anim = 0.0f;
+static bool  gui_visible = false;
+static bool  gui_was_visible = false;
 
 static bool key_listening = false;
 static int* listening_key = nullptr;
+
+static float menu_scale = 1.0f;
+static float prev_menu_scale = 1.0f;
+static bool  should_unload = false;
+static bool  pause_game = false;
 
 static const ImU32 C_ACCENT       = IM_COL32(205, 60, 60, 255);
 static const ImU32 C_ACCENT_DIM   = IM_COL32(170, 45, 45, 255);
@@ -99,6 +106,10 @@ static std::string KeyCodeToString(int key) {
             if (key >= '0' && key <= '9') { static char b[2] = {0, 0}; b[0] = (char)key; return std::string(b); }
             return "key";
     }
+}
+
+static void MoveCursorToMenu(int x, int y) {
+    ::SetCursorPos(x, y);
 }
 
 void ApplyDarkTheme() {
@@ -485,16 +496,29 @@ void RenderGui() {
     if (dt > 0.1f) dt = 0.1f;
     gui_fade_anim = SmoothLerp(gui_fade_anim, 1.0f, 8.0f, dt);
 
-    ImGui::SetNextWindowSize(ImVec2(920, 700), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(80, 50), ImGuiCond_FirstUseEver);
-    ImGui::Begin("##traceless", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-        ImGuiWindowFlags_NoBackground);
+    ImVec2 base_size(920, 700);
+    ImVec2 scaled_size(base_size.x * menu_scale, base_size.y * menu_scale);
 
-    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImGui::SetNextWindowSize(scaled_size, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(80, 50), ImGuiCond_FirstUseEver);
+
+    int window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                       ImGuiWindowFlags_NoBackground;
+
+    ImGui::Begin("##traceless", nullptr, window_flags);
+
     ImVec2 wp = ImGui::GetWindowPos();
     ImVec2 ws = ImGui::GetWindowSize();
+
+    if (gui_visible && !gui_was_visible) {
+        ImVec2 center(wp.x + ws.x * 0.5f, wp.y + ws.y * 0.5f);
+        MoveCursorToMenu((int)center.x, (int)center.y);
+        gui_was_visible = true;
+    }
+    if (!gui_visible) gui_was_visible = false;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
 
     float fade = EaseOutCubic(gui_fade_anim);
     ImVec2 wp_offset(0, (1.0f - fade) * 14.0f);
@@ -633,12 +657,46 @@ void RenderGui() {
     }
     else if (active_tab == 5) {
         float cw = (ws.x - pad * 2 - col_gap) / 2;
-        Card c(dl, ImVec2(wp.x + pad, content_y), cw, 180, "general", dt, off_x);
-        c.Header("general");
-        c.Chk("capture bypass", &g_Options.General.CaptureBypass);
-        c.Chk("legit mode", &g_Options.Misc.Other.legit_mode);
-        c.Chk("anti screenshot", &g_Options.Misc.Other.anti_screenshot);
-        c.Sld("thread delay", &g_Options.General.ThreadDelay, 0, 32);
+        {
+            Card c(dl, ImVec2(wp.x + pad, content_y), cw, 280, "general", dt, off_x);
+            c.Header("general");
+            c.Chk("capture bypass", &g_Options.General.CaptureBypass);
+            c.Chk("legit mode", &g_Options.Misc.Other.legit_mode);
+            c.Chk("anti screenshot", &g_Options.Misc.Other.anti_screenshot);
+            c.Sld("thread delay", &g_Options.General.ThreadDelay, 0, 32);
+        }
+        {
+            Card c(dl, ImVec2(wp.x + pad + cw + col_gap, content_y), cw, 280, "menu", dt, off_x);
+            c.Header("menu");
+            static int menu_scale_pct = 100;
+            menu_scale_pct = (int)(menu_scale * 100.0f);
+            c.Sld("scale", &menu_scale_pct, 60, 150, "%");
+            menu_scale = menu_scale_pct / 100.0f;
+
+            c.Chk("pause game", &pause_game);
+
+            c.y += 8;
+            if (c.anim_progress > 0.65f) {
+                ImVec2 btn_pos(c.pos.x + c.pad_x, c.pos.y + c.y);
+                float btn_w = c.w - c.pad_x * 2;
+                float btn_h = 28;
+                dl->AddRectFilled(btn_pos, ImVec2(btn_pos.x + btn_w, btn_pos.y + btn_h),
+                                  IM_COL32(180, 50, 50, 200), 4.0f);
+                dl->AddRect(btn_pos, ImVec2(btn_pos.x + btn_w, btn_pos.y + btn_h),
+                            IM_COL32(200, 60, 60, 255), 4.0f, 0, 1.0f);
+
+                const char* unload_text = "UNLOAD CHEAT";
+                ImVec2 text_size = ImGui::CalcTextSize(unload_text);
+                dl->AddText(ImVec2(btn_pos.x + (btn_w - text_size.x) * 0.5f, btn_pos.y + (btn_h - text_size.y) * 0.5f),
+                            IM_COL32(255, 255, 255, 255), unload_text);
+
+                ImGui::SetCursorScreenPos(btn_pos);
+                ImGui::InvisibleButton("##unload_btn", ImVec2(btn_w, btn_h));
+                if (ImGui::IsItemClicked()) {
+                    should_unload = true;
+                }
+            }
+        }
     }
 
     float tab_y = wp.y + ws.y - TAB_H + wp_offset.y;
