@@ -6,8 +6,6 @@
 namespace FrameWork {
 
 void ApplyDarkTheme();
-bool SectionHeader(const char* id, const char* label);
-void KeybindButton(const char* label, int* key);
 void RenderGui();
 
 struct Options {
