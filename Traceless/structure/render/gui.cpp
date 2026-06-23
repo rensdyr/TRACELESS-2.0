@@ -157,6 +157,14 @@ static void DrawSettingsIcon(ImDrawList* dl, ImVec2 c, ImU32 col) {
     }
 }
 
+static void DrawCardShadow(ImDrawList* dl, ImVec2 pos, float w, float h, float intensity) {
+    if (intensity < 0.01f) return;
+    ImU32 shadow = ScaleAlpha(IM_COL32(0, 0, 0, 100), intensity * 0.5f);
+    dl->AddRectFilled(ImVec2(pos.x + 2, pos.y + h - 1), ImVec2(pos.x + w - 2, pos.y + h + 3), shadow, 4.0f);
+    ImU32 shadow2 = ScaleAlpha(IM_COL32(0, 0, 0, 50), intensity * 0.25f);
+    dl->AddRectFilled(ImVec2(pos.x + 1, pos.y + h + 3), ImVec2(pos.x + w - 1, pos.y + h + 5), shadow2, 2.0f);
+}
+
 static void DrawAnimatedCheckmark(ImDrawList* dl, ImVec2 cp, float sz, float ca) {
     if (ca < 0.02f) return;
     dl->AddRectFilled(ImVec2(cp.x + 2, cp.y + 2), ImVec2(cp.x + sz - 2, cp.y + sz - 2), ScaleAlpha(C_ACCENT, ca), 2.0f);
@@ -171,6 +179,11 @@ static void DrawAnimatedCheckmark(ImDrawList* dl, ImVec2 cp, float sz, float ca)
         ImVec2 e2(a1.x + (a2.x - a1.x) * s2, a1.y + (a2.y - a1.y) * s2);
         dl->AddLine(a1, e2, mk, 1.4f);
     }
+}
+
+static void DrawPulsingDot(ImDrawList* dl, ImVec2 pos, float pulse, ImU32 col) {
+    float r = 3.0f + sinf(pulse * 6.2831f) * 1.5f;
+    dl->AddCircleFilled(pos, r, ScaleAlpha(col, 0.7f + sinf(pulse * 6.2831f) * 0.3f));
 }
 
 struct Card {
@@ -208,6 +221,10 @@ struct Card {
 
         ImU32 bg = LerpColor(C_BG_CARD, C_BG_CARD_HOV, hv * 0.5f);
         ImU32 br = LerpColor(C_BORDER_SOFT, ScaleAlpha(C_ACCENT, 0.4f), hv * 0.3f);
+
+        float content_fade = tab_content_anim > 0.6f ? 1.0f : 0.0f;
+        DrawCardShadow(dl, pos, w, h, hv * content_fade * 0.6f);
+
         dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), bg, 8.0f);
         dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), br, 8.0f, 0, 1.0f);
 
@@ -316,7 +333,11 @@ struct Card {
         DrawKeyboardIcon(dl, ImVec2(bp.x + 5, bp.y + 4), C_ACCENT);
         std::string s = listening ? "..." : KeyCodeToString(*key);
         ImVec2 ts = ImGui::CalcTextSize(s.c_str());
-        dl->AddText(ImVec2(bp.x + 25, bp.y + (bh - ts.y) / 2), C_TEXT, s.c_str());
+        dl->AddText(ImVec2(bp.x + 25, bp.y + (bh - ts.y) / 2), listening ? C_ACCENT : C_TEXT, s.c_str());
+
+        if (listening) {
+            DrawPulsingDot(dl, ImVec2(bp.x + bw - 6, bp.y + bh / 2), ImGui::GetTime() * 2.0f, C_ACCENT);
+        }
 
         if (anim_progress > 0.65f) {
             ImGui::SetCursorScreenPos(bp);
@@ -365,11 +386,18 @@ struct Card {
 
     void Sld(const char* label, int* v, int vmin, int vmax, const char* suffix = "") {
         if (anim_progress < 0.01f) { y += SLD_STEP; return; }
+        static std::map<std::string, int> sld_last_val;
+        std::string sld_key = std::string(id) + "_sld_val_" + label;
+        int& last_v = (sld_last_val.find(sld_key) == sld_last_val.end()) ? (sld_last_val[sld_key] = *v) : sld_last_val[sld_key];
+        bool val_changed = (*v != last_v);
+        if (val_changed) last_v = *v;
+
+        ImU32 val_col = val_changed ? C_ACCENT_LIGHT : C_TEXT_DIM;
         dl->AddText(ImVec2(pos.x + pad_x, pos.y + y), C_TEXT, label);
         char val[32];
         sprintf_s(val, "%d%s", *v, suffix);
         ImVec2 vs = ImGui::CalcTextSize(val);
-        dl->AddText(ImVec2(pos.x + w - vs.x - pad_x, pos.y + y), C_TEXT_DIM, val);
+        dl->AddText(ImVec2(pos.x + w - vs.x - pad_x, pos.y + y), val_col, val);
 
         y += 16;
         float th = 3;
@@ -576,7 +604,14 @@ void RenderGui() {
     for (int i = 0; i < 6; i++) {
         tab_anim[i] = SmoothLerp(tab_anim[i], (active_tab == i) ? 1.0f : 0.0f, 12.0f, dt);
         ImU32 col = LerpColor(C_TEXT_DIM, C_ACCENT, tab_anim[i]);
+        float icon_scale = 1.0f + tab_anim[i] * 0.15f;
+        ImGui::SetCursorScreenPos(ImVec2(cx + 9, tab_y + TAB_H / 2 + 1));
+        ImGui::InvisibleButton((std::string("##icon_") + tab_names[i]).c_str(), ImVec2(14, 14));
+        ImVec2 ic_center(cx + 9 + 7, tab_y + TAB_H / 2 + 1 + 7);
+        dl->PushClipRect(ImVec2(ic_center.x - 7 * icon_scale - 1, ic_center.y - 7 * icon_scale - 1),
+                         ImVec2(ic_center.x + 7 * icon_scale + 1, ic_center.y + 7 * icon_scale + 1), true);
         icons[i](dl, ImVec2(cx + 9, tab_y + TAB_H / 2 + 1), col);
+        dl->PopClipRect();
         ImVec2 ts = ImGui::CalcTextSize(tab_names[i]);
         dl->AddText(ImVec2(cx + 24, tab_y + (TAB_H - ts.y) / 2), col, tab_names[i]);
         float tw = 24 + ts.x + 24;
