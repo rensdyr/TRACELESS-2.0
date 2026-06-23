@@ -1,0 +1,288 @@
+{
+  "scaling_implementation_analysis": {
+    "base_dimensions": {
+      "base_size": [920, 700],
+      "menu_scale_range": "0.6 to 1.5 (60% to 150%)",
+      "location": "Line 499-500"
+    },
+    "scaling_mechanism": {
+      "window_scaling": "scaled_size = base_size * menu_scale",
+      "applies_to": "Window dimensions only",
+      "does_not_apply_to": "Interior padding, gaps, element sizes, button heights"
+    },
+    "failure_scenarios": [
+      {
+        "scenario_id": "FS-001",
+        "title": "Hardcoded Padding and Gaps Don't Scale",
+        "severity": "HIGH",
+        "location": "Line 542",
+        "code": "float pad = 14, col_gap = 14, v_gap = 12;",
+        "issue": "Padding and gaps are hardcoded in pixels, not multiplied by menu_scale",
+        "failure_modes": {
+          "at_60_percent": {
+            "window_width": 552,
+            "expected_pad": 8.4,
+            "actual_pad": 14,
+            "ratio": 1.67,
+            "result": "Padding consumes proportionally MORE space, content is CRAMPED and offset"
+          },
+          "at_100_percent": {
+            "window_width": 920,
+            "expected_pad": 14,
+            "actual_pad": 14,
+            "ratio": 1.0,
+            "result": "Normal (baseline works correctly)"
+          },
+          "at_150_percent": {
+            "window_width": 1380,
+            "expected_pad": 21,
+            "actual_pad": 14,
+            "ratio": 0.67,
+            "result": "Padding consumes proportionally LESS space, layout is LOOSE and sparse"
+          }
+        },
+        "impact": "Column width calculation becomes incorrect: cw = (ws.x - pad*2 - col_gap)/2",
+        "visual_consequence": "Cards are misaligned and incorrectly sized across different scales"
+      },
+      {
+        "scenario_id": "FS-002",
+        "title": "Button Height Doesn't Scale (btn_h = 28)",
+        "severity": "CRITICAL",
+        "location": "Line 682",
+        "code": "float btn_h = 28;",
+        "issue": "Unload button height is hardcoded, ignores menu_scale",
+        "failure_modes": {
+          "at_60_percent": {
+            "window_height": 420,
+            "expected_btn_h": 16.8,
+            "actual_btn_h": 28,
+            "ratio": 1.67,
+            "result": "Button TOWER proportionally, looks MASSIVE relative to card"
+          },
+          "at_100_percent": {
+            "window_height": 700,
+            "expected_btn_h": 28,
+            "actual_btn_h": 28,
+            "ratio": 1.0,
+            "result": "Normal (baseline)"
+          },
+          "at_150_percent": {
+            "window_height": 1050,
+            "expected_btn_h": 42,
+            "actual_btn_h": 28,
+            "ratio": 0.67,
+            "result": "Button appears TINY, text BARELY readable"
+          }
+        },
+        "impact": "Button text rendering at extreme scales becomes unreadable; vertical spacing broken",
+        "visual_consequence": "UNLOAD CHEAT button becomes disproportionate to UI"
+      },
+      {
+        "scenario_id": "FS-003",
+        "title": "Card Step Heights Don't Scale",
+        "severity": "HIGH",
+        "location": "Lines 211-215 (Card constants)",
+        "code": "static constexpr float HEADER_H = 42.0f; static constexpr float CHK_STEP = 28.0f; static constexpr float KB_STEP = 30.0f; static constexpr float CMB_STEP = 52.0f; static constexpr float SLD_STEP = 40.0f;",
+        "issue": "All card element step heights are hardcoded constants, never multiplied by menu_scale",
+        "failure_modes": {
+          "at_60_percent": {
+            "expected_header_h": 25.2,
+            "actual_header_h": 42.0,
+            "card_height_ratio": 1.67,
+            "result": "Card headers consume TOO MUCH space; elements pack too densely below"
+          },
+          "at_100_percent": {
+            "expected_header_h": 42.0,
+            "actual_header_h": 42.0,
+            "card_height_ratio": 1.0,
+            "result": "Normal"
+          },
+          "at_150_percent": {
+            "expected_header_h": 63.0,
+            "actual_header_h": 42.0,
+            "card_height_ratio": 0.67,
+            "result": "Card headers SHRINK relatively; huge GAPS between elements"
+          }
+        },
+        "impact": "Checkbox spacing (CHK_STEP=28) doesn't scale; slider spacing (SLD_STEP=40) doesn't scale; keybind height (KB_STEP=30) doesn't scale",
+        "visual_consequence": "Card content appears squeezed at 60%, stretched at 150%"
+      },
+      {
+        "scenario_id": "FS-004",
+        "title": "Icon Sizes Don't Scale (Fixed Pixel Coordinates)",
+        "severity": "MEDIUM",
+        "location": "Lines 124-171 (DrawKeyboardIcon, DrawCrosshairIcon, etc.)",
+        "code": "dl->AddRect(p, ImVec2(p.x + 15, p.y + 10), col, 2.0f, 0, 1.0f); dl->AddLine(ImVec2(c.x - 10, c.y), ImVec2(c.x - 3, c.y), col, 1.3f); dl->AddCircle(c, 7, col, 22, 1.3f);",
+        "issue": "All icon drawing uses hardcoded pixel offsets: 15, 10, 7, 10, 3, etc. These are NEVER multiplied by menu_scale",
+        "failure_modes": {
+          "at_60_percent": {
+            "icon_visual_size": "Fixed",
+            "window_scale": "60%",
+            "result": "Icons appear OVERSIZED relative to shrunk window, look PIXELATED/chunky"
+          },
+          "at_150_percent": {
+            "icon_visual_size": "Fixed",
+            "window_scale": "150%",
+            "result": "Icons appear UNDERSIZED relative to enlarged window, look TINY and hard to see"
+          }
+        },
+        "impact": "Tab icons (crosshair, eye, globe, etc.) stay same pixel size regardless of scale",
+        "visual_consequence": "UI icons become visually inconsistent with window size"
+      },
+      {
+        "scenario_id": "FS-005",
+        "title": "Hardcoded Element Sizes in Card Methods",
+        "severity": "HIGH",
+        "location": "Lines 297-330 (Checkbox/toggle box sizes, button dimensions)",
+        "code": "float sz = 12.0f; (checkbox) | float bw = 68, bh = 19; (keybind button) | float tw = 28, th = 14; (toggle)",
+        "issue": "Checkbox size (12px), keybind button (68x19px), toggle switch (28x14px) are all hardcoded",
+        "failure_modes": {
+          "at_60_percent": {
+            "checkbox_size": "12px",
+            "expected": "7.2px",
+            "keybind_button": "68x19px",
+            "expected": "40.8x11.4px",
+            "result": "ALL interactive elements GROSSLY OVERSIZED relative to text"
+          },
+          "at_150_percent": {
+            "checkbox_size": "12px",
+            "expected": "18px",
+            "keybind_button": "68x19px",
+            "expected": "102x28.5px",
+            "result": "All interactive elements UNDERSIZED relative to text"
+          }
+        },
+        "impact": "Checkbox clickability and visual hierarchy broken; toggles misaligned",
+        "visual_consequence": "Interaction targets don't match visual representation"
+      },
+      {
+        "scenario_id": "FS-006",
+        "title": "Text Positioning and Offsets Don't Scale",
+        "severity": "MEDIUM",
+        "location": "Multiple locations: Lines 253, 309, 367, 385, 409, 426, 455, 460",
+        "code": "dl->AddText(ImVec2(pos.x + pad_x, pos.y + 13), ...); dl->AddText(ImVec2(cp.x + sz + 7, cp.y - 2), ...);",
+        "issue": "Text positioning uses hardcoded offsets: +13, +7, +20, -2, +16, +6, +10, etc.",
+        "failure_modes": {
+          "at_60_percent": {
+            "offset": "+13 pixels",
+            "percent_of_scale": "Too much (13 vs expected 7.8)",
+            "result": "Text misaligned, floating above/below elements"
+          },
+          "at_150_percent": {
+            "offset": "+13 pixels",
+            "percent_of_scale": "Too little (13 vs expected 19.5)",
+            "result": "Text overlaps with elements or positioned too close"
+          }
+        },
+        "impact": "Text baseline alignment broken at extreme scales",
+        "visual_consequence": "Text appears floating or crushing into elements"
+      },
+      {
+        "scenario_id": "FS-007",
+        "title": "Window Offset Animation Not Scaled",
+        "severity": "MEDIUM",
+        "location": "Line 524",
+        "code": "ImVec2 wp_offset(0, (1.0f - fade) * 14.0f);",
+        "issue": "Window fade-in animation offset is hardcoded at 14.0f pixels",
+        "failure_modes": {
+          "at_60_percent": {
+            "animation_offset": "14px",
+            "window_height": 420,
+            "as_percent": "3.3%",
+            "result": "Animation looks EXAGGERATED, large jump"
+          },
+          "at_150_percent": {
+            "animation_offset": "14px",
+            "window_height": 1050,
+            "as_percent": "1.3%",
+            "result": "Animation barely visible"
+          }
+        },
+        "impact": "Window entrance animation feels inconsistent",
+        "visual_consequence": "UI pops in at different visual velocities depending on scale"
+      },
+      {
+        "scenario_id": "FS-008",
+        "title": "Combo Box Height Doesn't Scale",
+        "severity": "MEDIUM",
+        "location": "Line 412",
+        "code": "float bw = w - pad_x * 2, bh = 26;",
+        "issue": "Combo box height is hardcoded at 26px, only width scales",
+        "failure_modes": {
+          "at_60_percent": {
+            "expected_bh": 15.6,
+            "actual_bh": 26,
+            "ratio": 1.67,
+            "result": "Combo boxes TOWER, look disproportionate"
+          },
+          "at_150_percent": {
+            "expected_bh": 39,
+            "actual_bh": 26,
+            "ratio": 0.67,
+            "result": "Combo text appears CRAMPED"
+          }
+        },
+        "impact": "Dropdown controls look wrong at non-100% scales",
+        "visual_consequence": "Hitbox/visual size mismatch"
+      },
+      {
+        "scenario_id": "FS-009",
+        "title": "Card Rounding and Border Widths Don't Scale",
+        "severity": "LOW-MEDIUM",
+        "location": "Lines 241-242, 300, 328, 339, 379-380, 420, 683-686",
+        "code": "dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), bg, 8.0f); dl->AddRect(bp, ImVec2(bp.x + bw, bp.y + bh), brd, 3.0f, 0, 1.0f);",
+        "issue": "Border radius (8.0f, 4.0f, 3.0f) and border thickness (1.0f, 1.3f) are hardcoded",
+        "failure_modes": {
+          "at_60_percent": {
+            "card_corner_radius": "8px",
+            "as_percent_of_height": "1.9%",
+            "expected": "1.9%",
+            "result": "Corners TOO SHARP relatively"
+          },
+          "at_150_percent": {
+            "card_corner_radius": "8px",
+            "as_percent_of_height": "0.76%",
+            "expected": "1.9%",
+            "result": "Corners LESS rounded relatively"
+          }
+        },
+        "impact": "Card aesthetics change at different scales",
+        "visual_consequence": "Design consistency lost"
+      },
+      {
+        "scenario_id": "FS-010",
+        "title": "Text Height Calculations Become Wrong",
+        "severity": "MEDIUM",
+        "location": "Lines 410, 462, 455-460",
+        "code": "y += 16; (hardcoded label height) | char val[32]; ... ImVec2 vs = ImGui::CalcTextSize(val);",
+        "issue": "Text label spacing uses hardcoded y += 16 but ImGui text size doesn't scale with menu_scale",
+        "failure_modes": {
+          "at_60_percent": {
+            "hardcoded_step": "16px",
+            "text_actual_render_size": "Not scaled",
+            "result": "Text spacing wrong; labels don't align with values"
+          },
+          "at_150_percent": {
+            "hardcoded_step": "16px",
+            "text_actual_render_size": "Not scaled",
+            "result": "Same misalignment"
+          }
+        },
+        "impact": "Multi-line elements (combo + slider) spacing broken",
+        "visual_consequence": "Elements overlap or have wrong gaps"
+      }
+    ],
+    "root_cause": {
+      "problem": "menu_scale only affects window outer dimensions (line 500: scaled_size = base_size * menu_scale), but ALL interior layout calculations use hardcoded pixel values",
+      "why_it_breaks": "When window scales to 60% or 150%, all the padding, button heights, icon sizes, checkbox dimensions stay the same pixel count. This causes proportional misalignment.",
+      "missing_implementation": "No multiplication of any element dimensions by menu_scale inside RenderGui() and Card class methods"
+    },
+    "affected_components_summary": {
+      "window_ui_structure": ["padding (14px)", "column gap (14px)", "vertical gap (12px)"],
+      "card_system": ["header height (42px)", "checkbox step (28px)", "keybind step (30px)", "combo step (52px)", "slider step (40px)"],
+      "interactive_elements": ["checkbox size (12px)", "keybind button (68x19px)", "toggle switch (28x14px)", "combo height (26px)", "button height (28px)"],
+      "visual_details": ["all icon pixel coordinates", "border radius (8px, 4px, 3px)", "border widths (1.0f, 1.3f)", "text offsets", "animation offset (14px)"],
+      "spacing": ["hardcoded y-axis increments", "text baseline adjustments", "element padding within components"]
+    }
+  }
+}
