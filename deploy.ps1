@@ -17,7 +17,35 @@ $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 Write-Host "[1] Building solution..." -ForegroundColor Yellow
 Push-Location $scriptPath
 
-msbuild Traceless.sln /p:Configuration=Release /p:Platform=x64 /m
+# Find MSBuild
+$msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
+if (-not $msbuild) {
+    $vsPath = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\VisualStudio\*" -ErrorAction SilentlyContinue |
+              Where-Object { $_.InstallationPath } |
+              Select-Object -ExpandProperty InstallationPath -First 1
+
+    if (-not $vsPath) {
+        $vsPath = "C:\Program Files\Microsoft Visual Studio\2022"
+        $vsPath = Get-ChildItem $vsPath -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+    }
+
+    if ($vsPath) {
+        $msbuild = @(Get-ChildItem "$vsPath\MSBuild\Current\Bin\MSBuild.exe" -ErrorAction SilentlyContinue)[0]
+    }
+
+    if (-not $msbuild) {
+        Write-Host "[!] MSBuild not found. Install Visual Studio or add MSBuild to PATH" -ForegroundColor Red
+        Pop-Location
+        exit 1
+    }
+    $msbuild = $msbuild.FullName
+} else {
+    $msbuild = $msbuild.Source
+}
+
+Write-Host "    Using: $msbuild" -ForegroundColor Gray
+
+& $msbuild Traceless.sln /p:Configuration=Release /p:Platform=x64 /m
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] Build failed!" -ForegroundColor Red
