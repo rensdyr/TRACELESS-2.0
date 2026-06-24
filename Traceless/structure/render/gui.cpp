@@ -10,6 +10,29 @@
 #include <deque>
 
 namespace FrameWork {
+
+// ========================= WINDOW SUBCLASS =========================
+
+static HWND g_hWindow = nullptr;
+static WNDPROC g_OriginalWndProc = nullptr;
+static bool g_bMenuOpen = false;
+
+// When menu is closed, return HTTRANSPARENT to make clicks pass through to game/desktop.
+// When menu is open, let the original window proc handle it normally.
+extern "C" LRESULT CALLBACK SubclassedWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_NCHITTEST && !g_bMenuOpen) {
+        return HTTRANSPARENT;
+    }
+    return CallWindowProc(g_OriginalWndProc, hWnd, msg, wParam, lParam);
+}
+
+void SetupWindowSubclass(HWND hWnd) {
+    if (g_hWindow == nullptr) {
+        g_hWindow = hWnd;
+        g_OriginalWndProc = (WNDPROC)SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)SubclassedWindowProc);
+    }
+}
+
 namespace {
 
 // ========================= STATE =========================
@@ -63,6 +86,7 @@ bool  pause_game = false;
 
 bool  dragging = false;
 ImVec2 drag_offset(0, 0);
+bool  menu_visible = true;
 
 // ========================= PALETTE =========================
 
@@ -311,18 +335,19 @@ struct Card {
     static constexpr float SLD_STEP = 40.0f;
     static constexpr float BTN_H    = 30.0f;
     static constexpr float SEC_STEP = 22.0f;
+    float entry_eased;
 
     Card(ImDrawList* d, ImVec2 p, float width, float full_h, const char* sid, float dtime, float off_x = 0.0f)
         : dl(d), pos(ImVec2(p.x + off_x, p.y)), w(width), h_target(full_h), y(0), id(sid),
           pad_x(18.0f), dt(dtime), clip_pushed(false), hover_amount(0),
-          has_master(false), master_on(false), master_alpha(1.0f) {
+          has_master(false), master_on(false), master_alpha(1.0f), entry_eased(1.0f) {
 
         // Per-card stagger entry (each card delayed slightly behind the previous)
         int my_idx = card_render_index++;
         float delay = my_idx * 0.07f;
         if (delay > 0.5f) delay = 0.5f;
         float entry = Clamp01((tab_content_anim - delay) / (1.0f - delay));
-        float entry_eased = EaseOutCubic(entry);
+        entry_eased = EaseOutCubic(entry);
         pos.y += (1.0f - entry_eased) * 16.0f;
         pos.x += (1.0f - entry_eased) * (off_x > 0 ? 14.0f : -2.0f);
 
@@ -904,9 +929,31 @@ void ApplyDarkTheme() {
 
 void RenderGui() {
     ApplyDarkTheme();
+
+    // Set up window subclass once
+    static bool subclass_setup = false;
+    if (!subclass_setup && GetActiveWindow()) {
+        SetupWindowSubclass(GetActiveWindow());
+        subclass_setup = true;
+    }
+
+    // Handle INSERT key to toggle menu
+    static bool insert_pressed_last = false;
+    bool insert_pressed = (GetAsyncKeyState(VK_INSERT) & 0x8000) != 0;
+    if (insert_pressed && !insert_pressed_last) {
+        menu_visible = !menu_visible;
+        if (menu_visible) {
+            gui_fade_anim = 0.0f;
+        }
+    }
+    insert_pressed_last = insert_pressed;
+
+    // Sync the global for window subclass
+    g_bMenuOpen = menu_visible;
+
     float dt = ImGui::GetIO().DeltaTime;
     if (dt > 0.1f) dt = 0.1f;
-    gui_fade_anim = SmoothLerp(gui_fade_anim, 1.0f, 8.0f, dt);
+    gui_fade_anim = SmoothLerp(gui_fade_anim, menu_visible ? 1.0f : 0.0f, 8.0f, dt);
 
     // FPS history (one sample per frame, smoothed)
     float cur_fps = ImGui::GetIO().Framerate;
@@ -928,6 +975,15 @@ void RenderGui() {
              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
              ImGuiWindowFlags_NoBackground;
     ImGui::Begin("##traceless", nullptr, wf);
+
+    // When menu is closed, disable all ImGui input
+    if (!menu_visible) {
+        ImGuiIO& io = ImGui::GetIO();
+        for (int i = 0; i < 5; i++) io.MouseDown[i] = false;
+        io.MouseWheel = 0.0f;
+        io.MouseWheelH = 0.0f;
+        ImGui::GetCurrentContext()->ActiveId = 0;
+    }
 
     ImVec2 wp = ImGui::GetWindowPos();
     ImVec2 ws = ImGui::GetWindowSize();
@@ -992,10 +1048,10 @@ void RenderGui() {
     dl->AddRectFilled(ImVec2(wp.x + 26, wp.y + 26), ImVec2(wp.x + 34, wp.y + 34), C_BG_TOPBAR, 2.0f);
     dl->AddCircleFilled(ImVec2(wp.x + 30, wp.y + 30), 2, C_ACCENT);
 
-    dl->AddText(ImVec2(wp.x + 50, wp.y + 17), C_TEXT_BRIGHT, "SEVERANCE");
-    ImVec2 brand_sz = ImGui::CalcTextSize("SEVERANCE");
-    dl->AddText(ImVec2(wp.x + 50 + brand_sz.x + 2, wp.y + 17), C_ACCENT, ".today");
-    dl->AddText(ImVec2(wp.x + 50, wp.y + 31), C_TEXT_HINT, "premium gameplay tools");
+    dl->AddText(ImVec2(wp.x + 50, wp.y + 17), C_TEXT_BRIGHT, "KENZO EXTERNAL");
+    ImVec2 brand_sz = ImGui::CalcTextSize("KENZO EXTERNAL");
+    dl->AddText(ImVec2(wp.x + 50 + brand_sz.x + 2, wp.y + 17), C_ACCENT, "v6");
+    dl->AddText(ImVec2(wp.x + 50, wp.y + 31), C_TEXT_HINT, "premium external cheat");
 
     // Status pill (center)
     {
@@ -1340,7 +1396,7 @@ void RenderGui() {
           dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_DIM, "renews in");
           dl->AddText(ImVec2(c.pos.x + c.w - c.pad_x - 50, c.pos.y + c.y), C_TEXT_BRIGHT, "28 days");
           c.y += 32;
-          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_HINT, "thanks for using severance");
+          dl->AddText(ImVec2(c.pos.x + c.pad_x, c.pos.y + c.y), C_TEXT_HINT, "thanks for using kenzo");
         }
     }
     else if (active_tab == 3) {
