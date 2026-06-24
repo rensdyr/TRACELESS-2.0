@@ -17,35 +17,50 @@ $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 Write-Host "[1] Building solution..." -ForegroundColor Yellow
 Push-Location $scriptPath
 
-# Find MSBuild
+# Try to setup VS environment
+$vsPaths = @(
+    "$env:ProgramFiles\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat",
+    "$env:ProgramFiles\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat",
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Community\Common7\Tools\VsDevCmd.bat",
+    "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Professional\Common7\Tools\VsDevCmd.bat"
+)
+
+$vsDevCmd = $vsPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if ($vsDevCmd) {
+    Write-Host "    Setting up Visual Studio environment..." -ForegroundColor Gray
+    & cmd /c "call `"$vsDevCmd`" && set" | ForEach-Object {
+        if ($_ -match '=') {
+            $name, $value = $_.Split('=', 2)
+            Set-Item -Force -Path "env:\$name" -Value "$value" 2>$null
+        }
+    }
+}
+
+# Now find MSBuild
 $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
+
 if (-not $msbuild) {
-    $vsPath = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\VisualStudio\*" -ErrorAction SilentlyContinue |
-              Where-Object { $_.InstallationPath } |
-              Select-Object -ExpandProperty InstallationPath -First 1
-
-    if (-not $vsPath) {
-        $vsPath = "C:\Program Files\Microsoft Visual Studio\2022"
-        $vsPath = Get-ChildItem $vsPath -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
-    }
-
-    if ($vsPath) {
-        $msbuild = @(Get-ChildItem "$vsPath\MSBuild\Current\Bin\MSBuild.exe" -ErrorAction SilentlyContinue)[0]
-    }
+    $msbuildPaths = @(
+        "$env:ProgramFiles\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+        "$env:ProgramFiles\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe"
+    )
+    $msbuild = $msbuildPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
     if (-not $msbuild) {
-        Write-Host "[!] MSBuild not found. Install Visual Studio or add MSBuild to PATH" -ForegroundColor Red
+        Write-Host "[!] MSBuild not found. Run from Developer Command Prompt instead." -ForegroundColor Red
         Pop-Location
         exit 1
     }
-    $msbuild = $msbuild.FullName
 } else {
     $msbuild = $msbuild.Source
 }
 
-Write-Host "    Using: $msbuild" -ForegroundColor Gray
+Write-Host "    Using MSBuild" -ForegroundColor Gray
 
-& $msbuild Traceless.sln /p:Configuration=Release /p:Platform=x64 /m
+& msbuild Traceless.sln /p:Configuration=Release /p:Platform=x64 /m
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] Build failed!" -ForegroundColor Red
